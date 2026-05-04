@@ -1,23 +1,22 @@
 """
-Stage 2 — student-mcp 서버.
+Stage 2 — student-mcp 서버 (옵션 B: Tools + Resources 하이브리드).
 
-FastMCP를 사용해 Postgres(student_db) 위에 5개의 read-only 도구를 노출.
+설계 의도:
+  - DB 접근은 직접 SQL 유지 (학습 surface — ORM 도입 안 함, CLAUDE.md 결정)
+  - Tools: 동적 검색/집계 — LLM이 대화 흐름 보고 호출 시점/인자 판단
+  - Resources: ID 단일 조회 / 정적 마스터 — URI로 식별되는 자료
 
 핵심 보안 패턴:
-  DB 접속을 반드시 `mcp_reader` 롤로 한다 (SELECT only).
-  LLM이 잘못된 SQL을 만들어내도 INSERT/UPDATE/DELETE는 DB 레벨에서 거부된다.
-  → buildDsn() 에서 MCP_READER_USER 사용. POSTGRES_USER는 절대 쓰지 않는다.
+  반드시 mcp_reader 롤(SELECT only)로 DB 접속. POSTGRES_USER 절대 사용 X.
+  → buildDsn() 의 user 라인이 보안의 절반. 02_roles.sh 의 GRANT 정책이 나머지 절반.
 
 실행:
-  # (a) 개발 inspector — 브라우저로 도구 호출 테스트
-  mcp dev server/main.py
-
-  # (b) stdio 서버로 직접 실행 — Claude Desktop 등 클라이언트가 spawn
-  python server/main.py
+  mcp dev server/main.py        # 브라우저 inspector
+  python server/main.py         # stdio 서버 (Claude Desktop 등이 spawn)
 """
-from __future__ import annotations
-
+import json
 import os
+from dataclasses import asdict, dataclass
 from typing import Any
 
 import psycopg
@@ -29,6 +28,10 @@ load_dotenv()
 
 mcp = FastMCP("student-mcp")
 
+
+# ════════════════════════════════════════════════════════════
+# DB 헬퍼
+# ════════════════════════════════════════════════════════════
 
 def buildDsn() -> str:
     return (
@@ -48,21 +51,110 @@ def queryRows(sql: str, params: tuple = ()) -> list[dict[str, Any]]:
             return cur.fetchall()
 
 
-# ── 도구 1: 학생 검색 ─────────────────────────────────────────
+def jsonDump(value: Any) -> str:
+    """dataclass(es) → JSON 문자열 (한글 그대로 유지). Resource 반환 직렬화용."""
+    if isinstance(value, list):
+        out = [asdict(v) if hasattr(v, "__dataclass_fields__") else v for v in value]
+    elif hasattr(value, "__dataclass_fields__"):
+        out = asdict(value)
+    else:
+        out = value
+    return json.dumps(out, ensure_ascii=False, indent=2)
+
+
+# ════════════════════════════════════════════════════════════
+# 결과 모델 (dataclass) — SQL 쿼리 결과의 모양을 한 곳에 명시
+# ════════════════════════════════════════════════════════════
+
+@dataclass
+class DepartmentRow:
+    code: str
+    name: str
+    college: str
+
+
+@dataclass
+class DepartmentStat:
+    code: str
+    name: str
+    college: str
+    student_count: int
+    avg_gpa: float | None  # 학생/성적 0건 학과면 None
+
+
+@dataclass
+class StudentSummary:
+    student_no: str
+    name: str
+    department_code: str
+    department_name: str
+    admission_year: int
+    status: str
+
+
+@dataclass
+class EnrollmentRow:
+    course_code: str
+    course_title: str
+    credits: float
+    year: int
+    semester: str
+    grade: str | None         # 진행 중이면 None
+    grade_point: float | None
+    instructor: str | None
+
+
+@dataclass
+class StudentDetail:
+    student_no: str
+    name: str
+    email: str
+    department_code: str
+    department_name: str
+    admission_year: int
+    status: str
+    gpa: float | None
+    completed_count: int | None
+    earned_credits: float | None
+    enrollments: list[EnrollmentRow]
+
+
+@dataclass
+class CourseRow:
+    code: str
+    title: str
+    credits: float
+    department_code: str
+
+
+@dataclass
+class TopStudentRow:
+    student_no: str
+    name: str
+    department_code: str
+    gpa: float
+    completed_count: int
+    earned_credits: float
+
+
+# ════════════════════════════════════════════════════════════
+# Tools — 동적 검색/집계 (LLM이 호출 시점/인자 결정)
+# ════════════════════════════════════════════════════════════
+
 @mcp.tool()
 def search_students(
     name: str = "",
     department_code: str = "",
     status: str = "",
     limit: int = 20,
-) -> list[dict]:
-    """학생을 이름/학과코드/상태로 검색.
+) -> list[StudentSummary]:
+    """학생을 이름/학과/상태로 검색.
 
     Args:
-        name: 이름 부분 일치 (빈 값이면 무시)
-        department_code: 학과 코드 — 'GSC', 'NUR', 'SWF', 'ME', 'SPR'
+        name: 이름 부분 일치 (빈 값이면 무시, ILIKE %name%)
+        department_code: 'GSC' | 'NUR' | 'SWF' | 'ME' | 'SPR' (빈 값이면 무시)
         status: 'enrolled' | 'leave' | 'graduated' | 'dropped' (빈 값이면 무시)
-        limit: 최대 결과 수 (기본 20, 최대 200)
+        limit: 1 ~ 200 (기본 20)
     """
     conditions: list[str] = []
     params: list[Any] = []
@@ -89,13 +181,103 @@ def search_students(
         LIMIT %s
     """
     params.append(min(max(limit, 1), 200))
-    return queryRows(sql, tuple(params))
+    rows = queryRows(sql, tuple(params))
+    return [StudentSummary(**r) for r in rows]
 
 
-# ── 도구 2: 학생 상세 + 수강 내역 ─────────────────────────────
 @mcp.tool()
-def get_student_detail(student_no: str) -> dict:
-    """학번으로 학생 1명의 기본정보 + GPA + 수강 내역 전체."""
+def top_students(department_code: str = "", limit: int = 5) -> list[TopStudentRow]:
+    """상위 GPA 학생 랭킹.
+
+    Args:
+        department_code: 학과 코드 (빈 값이면 전체에서 상위)
+        limit: 1 ~ 50 (기본 5)
+    """
+    where = "WHERE g.gpa IS NOT NULL"
+    params: list[Any] = []
+    if department_code:
+        where += " AND d.code = %s"
+        params.append(department_code)
+    params.append(min(max(limit, 1), 50))
+
+    rows = queryRows(
+        f"""
+        SELECT s.student_no, s.name,
+               d.code AS department_code,
+               g.gpa::float8 AS gpa,
+               g.completed_count,
+               g.earned_credits::float8 AS earned_credits
+        FROM student_gpa g
+        JOIN students s ON s.id = g.student_id
+        JOIN departments d ON d.id = s.department_id
+        {where}
+        ORDER BY g.gpa DESC
+        LIMIT %s
+        """,
+        tuple(params),
+    )
+    return [TopStudentRow(**r) for r in rows]
+
+
+@mcp.tool()
+def department_stats() -> list[DepartmentStat]:
+    """학과별 학생 수와 평균 GPA, 단과대학."""
+    rows = queryRows(
+        """
+        SELECT d.code, d.name, d.college,
+               COUNT(s.id) AS student_count,
+               ROUND(AVG(g.gpa)::numeric, 2)::float8 AS avg_gpa
+        FROM departments d
+        LEFT JOIN students s ON s.department_id = d.id
+        LEFT JOIN student_gpa g ON g.student_id = s.id
+        GROUP BY d.code, d.name, d.college
+        ORDER BY avg_gpa DESC NULLS LAST
+        """
+    )
+    return [DepartmentStat(**r) for r in rows]
+
+
+# ════════════════════════════════════════════════════════════
+# Resources — URI로 식별되는 자료
+#   departments://all          정적 마스터
+#   courses://{dept}           학과별 강의
+#   students://{student_no}    학생 1명 상세
+# ════════════════════════════════════════════════════════════
+
+@mcp.resource("departments://all", mime_type="application/json")
+def res_departments() -> str:
+    """학과 마스터 — 5개 학과 (정적 자료)."""
+    rows = queryRows(
+        """
+        SELECT code, name, college
+        FROM departments
+        ORDER BY code
+        """
+    )
+    return jsonDump([DepartmentRow(**r) for r in rows])
+
+
+@mcp.resource("courses://{department_code}", mime_type="application/json")
+def res_courses(department_code: str) -> str:
+    """학과별 강의 목록. URI 예: courses://GSC"""
+    rows = queryRows(
+        """
+        SELECT c.code, c.title,
+               c.credits::float8 AS credits,
+               d.code AS department_code
+        FROM courses c
+        JOIN departments d ON d.id = c.department_id
+        WHERE d.code = %s
+        ORDER BY c.code
+        """,
+        (department_code,),
+    )
+    return jsonDump([CourseRow(**r) for r in rows])
+
+
+@mcp.resource("students://{student_no}", mime_type="application/json")
+def res_student_detail(student_no: str) -> str:
+    """학번으로 학생 1명의 기본정보 + GPA + 수강 내역. URI 예: students://20240001"""
     base = queryRows(
         """
         SELECT s.student_no, s.name, s.email,
@@ -112,9 +294,9 @@ def get_student_detail(student_no: str) -> dict:
         (student_no,),
     )
     if not base:
-        return {"error": f"학번 {student_no} 학생을 찾을 수 없습니다."}
+        return jsonDump({"error": f"학번 {student_no} 학생을 찾을 수 없습니다."})
 
-    enrollments = queryRows(
+    enrollRows = queryRows(
         """
         SELECT c.code AS course_code, c.title AS course_title,
                c.credits::float8 AS credits,
@@ -131,90 +313,12 @@ def get_student_detail(student_no: str) -> dict:
         """,
         (student_no,),
     )
-    return {**base[0], "enrollments": enrollments}
 
-
-# ── 도구 3: 강의 목록 ─────────────────────────────────────────
-@mcp.tool()
-def list_courses(department_code: str = "") -> list[dict]:
-    """학과별(또는 전체) 강의 목록.
-
-    Args:
-        department_code: 학과 코드. 빈 값이면 전체 학과 강의.
-    """
-    if department_code:
-        return queryRows(
-            """
-            SELECT c.code, c.title, c.credits::float8 AS credits,
-                   d.code AS department_code
-            FROM courses c
-            JOIN departments d ON d.id = c.department_id
-            WHERE d.code = %s
-            ORDER BY c.code
-            """,
-            (department_code,),
-        )
-    return queryRows(
-        """
-        SELECT c.code, c.title, c.credits::float8 AS credits,
-               d.code AS department_code
-        FROM courses c
-        JOIN departments d ON d.id = c.department_id
-        ORDER BY d.code, c.code
-        """
+    detail = StudentDetail(
+        **base[0],
+        enrollments=[EnrollmentRow(**r) for r in enrollRows],
     )
-
-
-# ── 도구 4: 학과별 통계 ───────────────────────────────────────
-@mcp.tool()
-def department_stats() -> list[dict]:
-    """학과별 학생 수와 평균 GPA, 단과대학."""
-    return queryRows(
-        """
-        SELECT d.code, d.name, d.college,
-               COUNT(s.id) AS student_count,
-               ROUND(AVG(g.gpa)::numeric, 2)::float8 AS avg_gpa
-        FROM departments d
-        LEFT JOIN students s ON s.department_id = d.id
-        LEFT JOIN student_gpa g ON g.student_id = s.id
-        GROUP BY d.code, d.name, d.college
-        ORDER BY avg_gpa DESC NULLS LAST
-        """
-    )
-
-
-# ── 도구 5: 상위 GPA 학생 ─────────────────────────────────────
-@mcp.tool()
-def top_students(department_code: str = "", limit: int = 5) -> list[dict]:
-    """상위 GPA 학생 랭킹.
-
-    Args:
-        department_code: 학과 코드. 빈 값이면 전체에서 상위.
-        limit: 최대 결과 수 (기본 5, 최대 50)
-    """
-    where = "WHERE g.gpa IS NOT NULL"
-    params: list[Any] = []
-    if department_code:
-        where += " AND d.code = %s"
-        params.append(department_code)
-    params.append(min(max(limit, 1), 50))
-
-    return queryRows(
-        f"""
-        SELECT s.student_no, s.name,
-               d.code AS department_code,
-               g.gpa::float8 AS gpa,
-               g.completed_count,
-               g.earned_credits::float8 AS earned_credits
-        FROM student_gpa g
-        JOIN students s ON s.id = g.student_id
-        JOIN departments d ON d.id = s.department_id
-        {where}
-        ORDER BY g.gpa DESC
-        LIMIT %s
-        """,
-        tuple(params),
-    )
+    return jsonDump(detail)
 
 
 if __name__ == "__main__":
