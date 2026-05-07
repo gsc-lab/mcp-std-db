@@ -1,0 +1,3 @@
+# Linux 컨테이너에서 실행되는 셸 스크립트는 항상 LF 유지.
+# core.autocrlf=true 환경에서도 CRLF로 변환되지 않도록 강제.
+*.sh text eol=lf
