@@ -1,0 +1,8 @@
+# 개발용 의존성 — 런타임에는 필요 없고 학습/디버깅 도구만 추가.
+# 사용: pip install -r requirements-dev.txt  (requirements.txt 도 함께 설치됨)
+
+-r requirements.txt
+
+# `mcp dev server/main.py` 가 Inspector 를 띄울 때 spawn 명령으로 사용.
+# uv 는 격리 환경에서 명령을 실행하는 도구 (Astral 제작).
+uv>=0.4

@@ -5,3 +5,6 @@ __pycache__/
 *.pyc
 .DS_Store
 CLAUDE.md
+
+# 생성된 PC별 설정 (절대 경로 포함) — gen_claude_desktop_config.py 의 출력
+etc/claude_desktop.json
