@@ -73,6 +73,9 @@ python db/03_seed.py --seed 7        # random seed 고정
 
 ## 검증 쿼리
 
+학과별 학생 수와 평균 GPA.
+
+**bash / zsh** (`\` 줄 연결):
 ```bash
 docker compose exec postgres psql -U postgres -d student_db -c \
   "SET search_path TO student_db; \
@@ -84,7 +87,14 @@ docker compose exec postgres psql -U postgres -d student_db -c \
    ORDER BY avg_gpa DESC NULLS LAST;"
 ```
 
-read-only 롤도 확인:
+**PowerShell** (한 줄 — `\` 가 리터럴이라 줄 연결 안 됨):
+```powershell
+docker compose exec postgres psql -U postgres -d student_db -c "SET search_path TO student_db; SELECT d.name, COUNT(*) AS students, ROUND(AVG(g.gpa)::numeric, 2) AS avg_gpa FROM students s JOIN departments d ON d.id = s.department_id LEFT JOIN student_gpa g ON g.student_id = s.id GROUP BY d.name ORDER BY avg_gpa DESC NULLS LAST;"
+```
+
+read-only 롤도 확인 (SELECT는 통과, DELETE는 거부되어야 정상).
+
+**bash / zsh:**
 ```bash
 docker compose exec postgres psql -U mcp_reader -d student_db -c \
   "SELECT COUNT(*) FROM student_db.students;"
@@ -92,6 +102,15 @@ docker compose exec postgres psql -U mcp_reader -d student_db -c \
 
 docker compose exec postgres psql -U mcp_reader -d student_db -c \
   "DELETE FROM student_db.students;"
+# → ERROR: permission denied
+```
+
+**PowerShell:**
+```powershell
+docker compose exec postgres psql -U mcp_reader -d student_db -c "SELECT COUNT(*) FROM student_db.students;"
+# → 카운트 정상 출력
+
+docker compose exec postgres psql -U mcp_reader -d student_db -c "DELETE FROM student_db.students;"
 # → ERROR: permission denied
 ```
 
