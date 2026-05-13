@@ -324,15 +324,15 @@ def res_student_detail(student_no: str) -> str:
 
 
 # ════════════════════════════════════════════════════════════
-# Prompts — 재사용 가능한 작업 흐름 (사용자가 슬래시 메뉴에서 선택)
+# Prompts — 사용자가 트리거하는 재사용 가능한 작업 흐름
 #
-# 설계 패턴 두 가지를 변주:
-#   (A) Server-side pre-fetch + EmbeddedResource 박제
-#       — 템플릿 Resource(students://{...}, courses://{...}) 처럼 Desktop
-#         picker에 안 뜨는 자료를, prompt 안에서 서버가 직접 읽어 첨부.
-#       — LLM은 별도 호출 없이 데이터를 손에 쥔 채 시작.
-#   (B) Tool 호출 유도 텍스트
-#       — prompt가 단순 지시문만 반환. LLM이 적절한 Tool을 알아서 부름.
+# 두 가지 패턴:
+#   (A) 서버 사전 조회 + EmbeddedResource 포함
+#       템플릿 Resource(students://{...} 등) 처럼 클라이언트 UI 에 안 뜨는
+#       자료를, prompt 안에서 서버가 직접 읽어 메시지에 포함시킨다.
+#       LLM 은 별도 호출 없이 데이터를 받아 답변 시작.
+#   (B) Tool 호출 안내 텍스트
+#       prompt 가 지시문만 반환. LLM 이 적절한 Tool 을 직접 호출.
 # ════════════════════════════════════════════════════════════
 
 def embedResource(uri: str, jsonText: str) -> EmbeddedResource:
@@ -349,7 +349,7 @@ def embedResource(uri: str, jsonText: str) -> EmbeddedResource:
 
 @mcp.prompt()
 def analyze_student_risk(student_no: str) -> list[UserMessage]:
-    """학번을 받아 학사 경고 가능성을 분석. 학생 상세 자료를 서버가 미리 첨부.
+    """학번을 받아 학사 경고 가능성을 분석. 학생 상세 자료를 서버가 미리 조회해 메시지에 포함.
 
     Args:
         student_no: 학번 (예: 20240001)
@@ -369,7 +369,7 @@ def analyze_student_risk(student_no: str) -> list[UserMessage]:
 
 @mcp.prompt()
 def course_catalog(department_code: str) -> list[UserMessage]:
-    """학과 강의 카탈로그를 첨부하고 정리를 요청.
+    """학과 강의 목록을 서버가 조회해 포함시키고 정리를 요청.
 
     Args:
         department_code: 학과 코드 (GSC | NUR | SWF | ME | SPR)
@@ -388,7 +388,7 @@ def course_catalog(department_code: str) -> list[UserMessage]:
 
 @mcp.prompt()
 def compare_departments() -> str:
-    """학과별 학생 수/평균 GPA 를 비교 분석 (Tool 호출 유도 패턴)."""
+    """학과별 학생 수/평균 GPA 비교 분석 (LLM 이 Tool 을 직접 호출하는 패턴)."""
     return (
         "department_stats 도구를 호출해 학과별 학생 수와 평균 GPA를 가져온 뒤, "
         "아래 관점으로 비교 분석해줘:\n"

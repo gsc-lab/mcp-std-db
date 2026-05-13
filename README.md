@@ -118,8 +118,35 @@ docker compose exec postgres psql -U mcp_reader -d student_db -c "DELETE FROM st
 # → ERROR: permission denied
 ```
 
-## 다음 단계 (Stage 2)
+## Stage 2 — MCP 서버
 
-`server/main.py` — FastMCP 서버에서 `mcp_reader` 계정으로 접속, 학생 검색/조회/통계 도구를 노출.
+[server/main.py](server/main.py) — FastMCP 서버, `mcp_reader` 롤로 DB 접속, 3개 primitive 노출:
 
-`agent/run.py` — Anthropic SDK + MCP 클라이언트로 Claude가 직접 도구를 호출하는 루프.
+- **Tools (3)** — 동적 검색/집계 (`search_students`, `top_students`, `department_stats`)
+- **Resources (1 정적 + 2 템플릿)** — `departments://all`, `courses://{department_code}`, `students://{student_no}`
+- **Prompts (3)** — `analyze_student_risk`, `course_catalog`, `compare_departments`
+
+Inspector 로 빠른 검증:
+```powershell
+.venv\Scripts\activate
+mcp dev server/main.py
+```
+
+Claude Desktop 등록:
+```powershell
+python etc/gen_claude_desktop_config.py
+# → 생성된 etc/claude_desktop.json 의 mcpServers 를
+#   %APPDATA%\Claude\claude_desktop_config.json 에 머지 후 Desktop 재실행
+```
+
+## Stage 3 — Agent 루프
+
+[agent/01_single_turn.py](agent/01_single_turn.py) — Anthropic SDK + MCP 클라이언트로 자연어 질문 → 도구 호출 → 답변 루프. 사전 조건: `.env` 에 `ANTHROPIC_API_KEY` 추가.
+
+```bash
+python agent/01_single_turn.py "GSC 학과의 학생 수와 평균 GPA"
+```
+
+콘솔에 wire traffic 이 보이도록 모든 JSON-RPC 송수신을 `>>`, `<<` 마커로 로깅 — 학생들이 "프로토콜이 어떻게 흐르는지" 를 실시간으로 본다.
+
+현재 single-turn (Tool 1회 호출 후 종료). multi-turn 루프 + Resource template / Prompt SDK 호출은 다음 작업.

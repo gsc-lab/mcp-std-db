@@ -1,0 +1,303 @@
+/* student-mcp web v3 — v2 의 CSS 위에 prompt 모달/카드 추가. */
+
+* { box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Malgun Gothic",
+               "Apple SD Gothic Neo", sans-serif;
+  margin: 0;
+  background: #f7f7f8;
+  color: #1f2328;
+  line-height: 1.5;
+}
+code { font-family: "Cascadia Code", Consolas, "Liberation Mono", monospace; font-size: 0.92em; }
+
+header {
+  background: #fff;
+  border-bottom: 1px solid #e4e4e7;
+  padding: 16px 24px;
+}
+header h1 { margin: 0; font-size: 18px; }
+header p { margin: 4px 0 0; color: #6b7280; font-size: 13px; }
+
+main {
+  max-width: 920px;
+  margin: 24px auto;
+  padding: 0 24px;
+}
+
+/* ── 답변 영역 ─────────────────────────── */
+#answer-section { margin-bottom: 12px; }
+#answer {
+  background: #fff;
+  border: 1px solid #e4e4e7;
+  border-radius: 8px;
+  padding: 16px 18px;
+  min-height: 100px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+#answer ul { margin: 8px 0 0 18px; padding: 0; }
+#answer li { margin: 2px 0; }
+.answer-empty { color: #6b7280; }
+.answer-empty ul { list-style: disc; }
+.answer-loading { color: #6b7280; font-style: italic; }
+.answer-error { color: #b91c1c; }
+.answer-meta {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed #d1d5db;
+  color: #6b7280;
+  font-size: 12px;
+}
+
+/* ── 첨부 chips ─────────────────────────── */
+.attached-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #eef2ff;
+  border: 1px solid #c7d2fe;
+  color: #3730a3;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-family: "Cascadia Code", Consolas, monospace;
+}
+.chip-remove {
+  cursor: pointer;
+  color: #6366f1;
+  font-weight: 700;
+  border: 0;
+  background: transparent;
+  padding: 0 0 0 4px;
+  font-size: 14px;
+  line-height: 1;
+}
+.chip-remove:hover { color: #312e81; }
+
+/* ── 입력 폼 ─────────────────────────── */
+#ask-form {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+  margin-bottom: 24px;
+}
+#question {
+  flex: 1;
+  font-family: inherit;
+  font-size: 14px;
+  padding: 10px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  resize: vertical;
+  min-height: 70px;
+}
+#question:focus { outline: 2px solid #2563eb; outline-offset: -1px; border-color: transparent; }
+.form-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+#attach-btn, #prompt-btn, #ask-btn {
+  padding: 0 14px;
+  border: 0;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+}
+#attach-btn, #prompt-btn {
+  background: #f3f4f6;
+  color: #374151;
+  border: 1px solid #d1d5db;
+  font-size: 16px;
+  min-width: 44px;
+}
+#attach-btn:hover, #prompt-btn:hover { background: #e5e7eb; }
+#ask-btn {
+  background: #2563eb;
+  color: white;
+  flex: 1;
+}
+#ask-btn:hover { background: #1d4ed8; }
+#ask-btn:disabled, #attach-btn:disabled, #prompt-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── Wire log ─────────────────────────── */
+#wire-section h2 {
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+  margin: 0 0 8px;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.hint { font-weight: 400; color: #9aa0a6; font-size: 12px; }
+#wire-log {
+  background: #1e1e1e;
+  color: #d4d4d4;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 12px;
+  padding: 12px 14px;
+  border-radius: 6px;
+  max-height: 380px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+}
+.log-out  { color: #4ec9b0; }
+.log-in   { color: #c586c0; }
+.log-meta { color: #9cdcfe; }
+
+/* ── 모달 공통 (v2 와 동일) ─────────────────────────── */
+.modal { position: fixed; inset: 0; z-index: 50; }
+.modal.hidden { display: none; }
+.modal-backdrop { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.4); }
+.modal-content {
+  position: relative;
+  background: #fff;
+  max-width: 720px;
+  margin: 60px auto;
+  border-radius: 10px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.18);
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 120px);
+}
+.modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 20px; border-bottom: 1px solid #e4e4e7;
+}
+.modal-header h2 { margin: 0; font-size: 16px; }
+.modal-close { background: transparent; border: 0; font-size: 18px; color: #6b7280; cursor: pointer; }
+.modal-close:hover { color: #111827; }
+.modal-body { padding: 16px 20px; overflow-y: auto; }
+.modal-footer {
+  padding: 12px 20px; border-top: 1px solid #e4e4e7;
+  display: flex; justify-content: flex-end;
+}
+.modal-close-btn {
+  background: #f3f4f6; border: 1px solid #d1d5db;
+  border-radius: 6px; padding: 6px 14px; cursor: pointer;
+}
+.modal-close-btn:hover { background: #e5e7eb; }
+
+/* ── Resource 모달 자료 목록 (v2 와 동일) ─────────────────────────── */
+.resource-group { margin-bottom: 20px; }
+.resource-group:last-child { margin-bottom: 0; }
+.resource-group h3 {
+  font-size: 13px; color: #374151; margin: 0 0 8px; font-weight: 600;
+}
+.resource-list {
+  list-style: none; padding: 0; margin: 0;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.resource-list .empty {
+  color: #9aa0a6; font-style: italic; padding: 6px 10px;
+}
+.resource-item {
+  border: 1px solid #e4e4e7; border-radius: 6px; padding: 10px 12px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.resource-item .uri {
+  font-family: "Cascadia Code", Consolas, monospace; font-size: 12px; color: #1f2328;
+}
+.resource-item .desc { font-size: 12px; color: #6b7280; }
+.resource-item .actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.resource-item input[type="text"] {
+  flex: 1; min-width: 120px;
+  padding: 6px 8px; border: 1px solid #d1d5db; border-radius: 4px;
+  font-family: "Cascadia Code", Consolas, monospace; font-size: 12px;
+}
+.add-btn {
+  padding: 6px 14px; background: #2563eb; color: white;
+  border: 0; border-radius: 4px; cursor: pointer; font-size: 12px;
+}
+.add-btn:hover { background: #1d4ed8; }
+
+/* ── Prompt 모달 카드 (v3 신설) ─────────────────────────── */
+.prompt-list {
+  list-style: none; padding: 0; margin: 0;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.prompt-list .empty {
+  color: #9aa0a6; font-style: italic; padding: 6px 10px;
+}
+.prompt-item {
+  border: 1px solid #e4e4e7;
+  border-radius: 8px;
+  padding: 12px 14px;
+  background: #fafafa;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.prompt-item .name {
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 13px;
+  font-weight: 600;
+  color: #1f2328;
+}
+.prompt-item .desc {
+  font-size: 12px;
+  color: #6b7280;
+}
+.prompt-item .args {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.prompt-item .arg-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.prompt-item .arg-row label {
+  min-width: 120px;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 12px;
+  color: #374151;
+}
+.prompt-item .arg-row label .required {
+  color: #dc2626;
+  margin-left: 2px;
+}
+.prompt-item .arg-row input {
+  flex: 1;
+  padding: 6px 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  font-size: 12px;
+}
+.prompt-item .fire-btn {
+  align-self: flex-start;
+  padding: 6px 16px;
+  background: #16a34a;
+  color: white;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+}
+.prompt-item .fire-btn:hover { background: #15803d; }
+.prompt-item .no-args {
+  font-size: 12px;
+  color: #9aa0a6;
+  font-style: italic;
+}
+
+/* ── 푸터 ─────────────────────────── */
+footer {
+  max-width: 920px;
+  margin: 32px auto 16px;
+  padding: 0 24px;
+  color: #6b7280;
+  font-size: 12px;
+}

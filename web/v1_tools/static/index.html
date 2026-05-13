@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>student-mcp · web v1 (Tool 기반 chat)</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <h1>student-mcp · web v1</h1>
+    <p>Tool 기반 chat — <code>agent/02_multi_turn.py</code> 의 웹 버전</p>
+  </header>
+
+  <main>
+    <section id="answer-section">
+      <div id="answer" class="answer-empty">
+        질문을 입력하고 <strong>보내기</strong> 버튼을 누르세요.<br>
+        예: "GSC 학과의 평균 GPA 와 상위 3명을 같이 보여줘"
+      </div>
+    </section>
+
+    <form id="ask-form">
+      <textarea
+        id="question"
+        rows="3"
+        placeholder="자연어로 질문하세요. 학과·학생·강의에 대한 검색·집계가 가능합니다."
+        required
+      ></textarea>
+      <button type="submit" id="ask-btn">보내기</button>
+    </form>
+
+    <section id="wire-section">
+      <h2>
+        통신 로그
+        <span class="hint">MCP / Claude API 호출 흐름</span>
+      </h2>
+      <pre id="wire-log">(아직 요청이 없습니다)</pre>
+    </section>
+  </main>
+
+  <footer>
+    <small>
+      JSON-RPC 메시지 자체를 보려면 <code>agent/00_raw_jsonrpc.py</code>,
+      같은 로직의 CLI 버전은 <code>agent/02_multi_turn.py</code>.
+    </small>
+  </footer>
+
+  <script src="/static/chat.js"></script>
+</body>
+</html>

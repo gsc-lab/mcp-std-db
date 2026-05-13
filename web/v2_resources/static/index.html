@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>student-mcp · web v2 (Tool + Resource 첨부)</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <h1>student-mcp · web v2</h1>
+    <p>Tool 기반 chat + Resource 사용자 첨부 — Desktop "+" 메뉴와 동등</p>
+  </header>
+
+  <main>
+    <section id="answer-section">
+      <div id="answer" class="answer-empty">
+        질문을 입력하고 <strong>보내기</strong> 버튼을 누르세요.<br>
+        <code>📎</code> 버튼으로 자료를 첨부하면 LLM 이 그 자료를 미리 받아본 상태로 답변합니다.
+      </div>
+    </section>
+
+    <!-- 첨부된 URI 목록 (JS 가 동적으로 채움) -->
+    <div id="attached-chips" class="attached-chips"></div>
+
+    <form id="ask-form">
+      <textarea
+        id="question"
+        rows="3"
+        placeholder="자연어로 질문하세요. 자료가 필요하면 📎 로 첨부하세요."
+        required
+      ></textarea>
+      <div class="form-buttons">
+        <button type="button" id="attach-btn" title="자료 첨부">📎</button>
+        <button type="submit" id="ask-btn">보내기</button>
+      </div>
+    </form>
+
+    <section id="wire-section">
+      <h2>
+        통신 로그
+        <span class="hint">MCP / Claude API 호출 흐름</span>
+      </h2>
+      <pre id="wire-log">(아직 요청이 없습니다)</pre>
+    </section>
+  </main>
+
+  <!-- 자료 첨부 모달 — 기본 숨김 -->
+  <div id="resource-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <div class="modal-backdrop" data-close-modal></div>
+    <div class="modal-content">
+      <header class="modal-header">
+        <h2 id="modal-title">자료 첨부</h2>
+        <button type="button" class="modal-close" data-close-modal aria-label="닫기">✕</button>
+      </header>
+
+      <div class="modal-body">
+        <section class="resource-group">
+          <h3>정적 자료</h3>
+          <ul id="static-list" class="resource-list">
+            <li class="empty">불러오는 중...</li>
+          </ul>
+        </section>
+
+        <section class="resource-group">
+          <h3>템플릿 자료 <span class="hint">— 변수 자리를 직접 채워야 합니다</span></h3>
+          <ul id="template-list" class="resource-list">
+            <li class="empty">불러오는 중...</li>
+          </ul>
+        </section>
+      </div>
+
+      <footer class="modal-footer">
+        <button type="button" class="modal-close-btn" data-close-modal>닫기</button>
+      </footer>
+    </div>
+  </div>
+
+  <footer>
+    <small>
+      같은 흐름의 CLI 단계: <code>agent/02_multi_turn.py</code>. JSON-RPC 메시지는 <code>agent/00_raw_jsonrpc.py</code>.
+    </small>
+  </footer>
+
+  <script src="/static/chat.js"></script>
+</body>
+</html>

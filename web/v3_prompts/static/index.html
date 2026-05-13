@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>student-mcp · web v3 (Tool + Resource + Prompt)</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <h1>student-mcp · web v3</h1>
+    <p>Tool 기반 chat + Resource 첨부 + Prompt 호출</p>
+  </header>
+
+  <main>
+    <section id="answer-section">
+      <div id="answer" class="answer-empty">
+        세 가지 방식 중 하나로 시작:
+        <ul>
+          <li><strong>자연어 질문</strong>: 아래 입력란에 적고 [보내기]</li>
+          <li><strong>자료 첨부 + 질문</strong>: <code>📎</code> 로 자료 선택 후 질문</li>
+          <li><strong>Prompt 호출</strong>: <code>📋</code> 로 작업 흐름 선택 (서버가 제공하는 표준 분석)</li>
+        </ul>
+      </div>
+    </section>
+
+    <div id="attached-chips" class="attached-chips"></div>
+
+    <form id="ask-form">
+      <textarea
+        id="question"
+        rows="3"
+        placeholder="자연어로 질문하세요. 자료 첨부는 📎, 작업 흐름은 📋."
+      ></textarea>
+      <div class="form-buttons">
+        <button type="button" id="attach-btn" title="자료 첨부 (Resource)">📎</button>
+        <button type="button" id="prompt-btn" title="작업 흐름 호출 (Prompt)">📋</button>
+        <button type="submit" id="ask-btn">보내기</button>
+      </div>
+    </form>
+
+    <section id="wire-section">
+      <h2>
+        통신 로그
+        <span class="hint">MCP / Claude API 호출 흐름</span>
+      </h2>
+      <pre id="wire-log">(아직 요청이 없습니다)</pre>
+    </section>
+  </main>
+
+  <!-- 자료(Resource) 첨부 모달 — v2 와 동일 -->
+  <div id="resource-modal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-backdrop" data-close-modal></div>
+    <div class="modal-content">
+      <header class="modal-header">
+        <h2>자료 첨부 (Resource)</h2>
+        <button type="button" class="modal-close" data-close-modal aria-label="닫기">✕</button>
+      </header>
+      <div class="modal-body">
+        <section class="resource-group">
+          <h3>정적 자료</h3>
+          <ul id="static-list" class="resource-list">
+            <li class="empty">불러오는 중...</li>
+          </ul>
+        </section>
+        <section class="resource-group">
+          <h3>템플릿 자료 <span class="hint">— 변수 자리를 직접 채워야 합니다</span></h3>
+          <ul id="template-list" class="resource-list">
+            <li class="empty">불러오는 중...</li>
+          </ul>
+        </section>
+      </div>
+      <footer class="modal-footer">
+        <button type="button" class="modal-close-btn" data-close-modal>닫기</button>
+      </footer>
+    </div>
+  </div>
+
+  <!-- 작업 흐름(Prompt) 호출 모달 — v3 신설 -->
+  <div id="prompt-modal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-backdrop" data-close-prompt-modal></div>
+    <div class="modal-content">
+      <header class="modal-header">
+        <h2>작업 흐름 호출 (Prompt)</h2>
+        <button type="button" class="modal-close" data-close-prompt-modal aria-label="닫기">✕</button>
+      </header>
+      <div class="modal-body">
+        <p class="hint" style="margin: 0 0 12px;">
+          서버가 제공하는 표준 작업 흐름을 호출합니다. 각 카드의 [보내기] 를 누르면
+          모달이 닫히고 곧장 요청 — 메인 텍스트박스의 질문/첨부는 무시됩니다.
+        </p>
+        <ul id="prompt-list" class="prompt-list">
+          <li class="empty">불러오는 중...</li>
+        </ul>
+      </div>
+      <footer class="modal-footer">
+        <button type="button" class="modal-close-btn" data-close-prompt-modal>닫기</button>
+      </footer>
+    </div>
+  </div>
+
+  <footer>
+    <small>
+      같은 흐름의 CLI 단계: <code>agent/02_multi_turn.py</code>. JSON-RPC 메시지는 <code>agent/00_raw_jsonrpc.py</code>.
+    </small>
+  </footer>
+
+  <script src="/static/chat.js"></script>
+</body>
+</html>
