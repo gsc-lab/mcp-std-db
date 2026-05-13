@@ -23,6 +23,8 @@ import psycopg
 from psycopg.rows import dict_row
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp.prompts.base import UserMessage
+from mcp.types import EmbeddedResource, TextResourceContents
 
 load_dotenv()
 
@@ -319,6 +321,82 @@ def res_student_detail(student_no: str) -> str:
         enrollments=[EnrollmentRow(**r) for r in enrollRows],
     )
     return jsonDump(detail)
+
+
+# ════════════════════════════════════════════════════════════
+# Prompts — 재사용 가능한 작업 흐름 (사용자가 슬래시 메뉴에서 선택)
+#
+# 설계 패턴 두 가지를 변주:
+#   (A) Server-side pre-fetch + EmbeddedResource 박제
+#       — 템플릿 Resource(students://{...}, courses://{...}) 처럼 Desktop
+#         picker에 안 뜨는 자료를, prompt 안에서 서버가 직접 읽어 첨부.
+#       — LLM은 별도 호출 없이 데이터를 손에 쥔 채 시작.
+#   (B) Tool 호출 유도 텍스트
+#       — prompt가 단순 지시문만 반환. LLM이 적절한 Tool을 알아서 부름.
+# ════════════════════════════════════════════════════════════
+
+def embedResource(uri: str, jsonText: str) -> EmbeddedResource:
+    """JSON 문자열을 EmbeddedResource(application/json) 로 감싼다."""
+    return EmbeddedResource(
+        type="resource",
+        resource=TextResourceContents(
+            uri=uri,
+            mimeType="application/json",
+            text=jsonText,
+        ),
+    )
+
+
+@mcp.prompt()
+def analyze_student_risk(student_no: str) -> list[UserMessage]:
+    """학번을 받아 학사 경고 가능성을 분석. 학생 상세 자료를 서버가 미리 첨부.
+
+    Args:
+        student_no: 학번 (예: 20240001)
+    """
+    uri = f"students://{student_no}"
+    return [
+        UserMessage(content=embedResource(uri, res_student_detail(student_no))),
+        UserMessage(content=(
+            f"위 학생({student_no}) 의 학사 경고 가능성을 평가해줘.\n"
+            "- GPA 수준\n"
+            "- 누적 이수 학점\n"
+            "- 미이수(F/W) 과목 비율\n"
+            "세 가지를 종합해 위험도(낮음/보통/높음) 와 근거를 단계별로 제시할 것."
+        )),
+    ]
+
+
+@mcp.prompt()
+def course_catalog(department_code: str) -> list[UserMessage]:
+    """학과 강의 카탈로그를 첨부하고 정리를 요청.
+
+    Args:
+        department_code: 학과 코드 (GSC | NUR | SWF | ME | SPR)
+    """
+    uri = f"courses://{department_code}"
+    return [
+        UserMessage(content=embedResource(uri, res_courses(department_code))),
+        UserMessage(content=(
+            f"위 {department_code} 학과의 강의 목록을 다음 기준으로 정리:\n"
+            "1) 코드 번호로 학년 추정 (예: 1xx=1학년)\n"
+            "2) 학년별로 표로 묶기\n"
+            "3) 각 강의의 학점도 함께 표기"
+        )),
+    ]
+
+
+@mcp.prompt()
+def compare_departments() -> str:
+    """학과별 학생 수/평균 GPA 를 비교 분석 (Tool 호출 유도 패턴)."""
+    return (
+        "department_stats 도구를 호출해 학과별 학생 수와 평균 GPA를 가져온 뒤, "
+        "아래 관점으로 비교 분석해줘:\n"
+        "1) 평균 GPA 가 가장 높은 학과와 가장 낮은 학과\n"
+        "2) 학생 수와 평균 GPA 의 상관관계 (대략적 경향)\n"
+        "3) 단과대학(college) 단위로 묶었을 때 보이는 패턴\n"
+        "근거가 되는 숫자를 본문에 인용할 것."
+    )
 
 
 if __name__ == "__main__":

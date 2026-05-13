@@ -71,6 +71,10 @@ def main() -> int:
                 "command": str(py),
                 "args": [str(main_py)],
                 "cwd": str(root),
+                # Windows cp949 환경에서 Claude Desktop이 spawn한 Python이
+                # 소스 파일(.py)을 cp949 로 잘못 디코딩하는 케이스 방지.
+                # PEP 540 (UTF-8 mode) 강제: 소스/표준입출력/파일 I/O 모두 UTF-8.
+                "env": {"PYTHONUTF8": "1"},
             }
         }
     }

@@ -21,5 +21,20 @@ services:
       timeout: 3s
       retries: 5
 
+  # DB 테이블 브라우저 — http://localhost:8080
+  # 학습/디버깅용. 로그인 시 시스템=PostgreSQL, 서버=postgres(컨테이너명) 그대로,
+  # 사용자/비밀번호는 .env 의 POSTGRES_USER / POSTGRES_PASSWORD.
+  adminer:
+    image: adminer:4
+    container_name: student-mcp-adminer
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+    ports:
+      - "${ADMINER_PORT:-8080}:8080"
+
 volumes:
   student_pgdata:

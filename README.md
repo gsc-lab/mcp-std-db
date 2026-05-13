@@ -44,12 +44,16 @@ cp .env.example .env
 # 필요시 비밀번호 등 수정
 ```
 
-### 2. Postgres 띄우기
+### 2. Postgres + Adminer 띄우기
 ```bash
 docker compose up -d
 docker compose logs postgres   # init 스크립트 정상 실행 확인
 ```
 첫 부팅 때 `01_schema.sql` → `02_roles.sh` 순으로 자동 실행됩니다.
+
+DB 테이블을 브라우저로 확인: **http://localhost:8080**
+- 시스템: `PostgreSQL`, 서버: `postgres`, 사용자/비밀번호: `.env` 의 값, 데이터베이스: `student_db`
+- 시드(다음 단계) 까지 끝나면 `student_db` 스키마에서 5개 테이블과 `student_gpa` 뷰가 보입니다.
 
 ### 3. Python 의존성 설치
 ```bash
