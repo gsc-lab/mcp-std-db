@@ -1,17 +1,22 @@
 /**
- * web v3 — Tool 기반 chat + Resource 첨부 + Prompt 호출
+ * student-mcp web — Vanilla JS 프론트엔드
  *
- * v2 → v3 추가 사항:
- *   - GET /api/prompts 로 prompt 모달 채우기
- *   - 📋 버튼 → prompt 모달
- *   - 각 prompt 카드에 [보내기] 버튼 — 클릭 시 모달 닫고 POST /api/ask {prompt: ...}
- *   - 메인 [보내기] 는 question + attach 전용 (prompt 와 상호 배타)
+ * 동작:
+ *   페이지 로드 시 GET /api/resources, GET /api/prompts 로 두 모달 채움.
+ *   사용자가 [보내기] 누르면 POST /api/ask 로 요청 → 답변 + 통신 로그 표시.
+ *
+ * 세 가지 진입점:
+ *   1) 메인 [보내기]: question + attach (자연어 또는 첨부 포함)
+ *   2) 📎 모달 → [첨부] 버튼: attached 배열에 URI 추가
+ *   3) 📋 모달 → 카드 [보내기]: prompt 호출, 메인 입력은 무시
+ *
+ * 의존성 없음 (fetch + DOM 만).
  */
 
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 
-// 사용자가 첨부한 URI 목록 (v2 와 동일)
+// 사용자가 첨부한 URI 목록.
 const attached = [];
 
 document.addEventListener("DOMContentLoaded", async () => {
@@ -23,13 +28,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   });
 
-  // Resource 모달 (v2 와 동일)
   $("#attach-btn").addEventListener("click", openResourceModal);
   $$("[data-close-modal]").forEach((el) =>
     el.addEventListener("click", closeResourceModal),
   );
 
-  // Prompt 모달 (v3 신설)
   $("#prompt-btn").addEventListener("click", openPromptModal);
   $$("[data-close-prompt-modal]").forEach((el) =>
     el.addEventListener("click", closePromptModal),
@@ -42,20 +45,21 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   });
 
-  // 페이지 로드 시 두 모달의 내용 미리 로드
+  // 페이지 로드 시 두 모달의 내용 미리 로드.
   await Promise.all([loadResourceList(), loadPromptList()]);
 });
 
 // ════════════════════════════════════════════════════════════════
-// Resource 모달 (v2 와 동일)
+// Resource 모달
 // ════════════════════════════════════════════════════════════════
 async function loadResourceList() {
   try {
     const resp = await fetch("/api/resources");
     const data = await resp.json();
-    if (data.error) {
-      renderListError("static-list", data.error);
-      renderListError("template-list", data.error);
+    if (data.detail || data.error) {
+      const msg = data.detail || data.error;
+      renderListError("static-list", msg);
+      renderListError("template-list", msg);
       return;
     }
     renderStaticList(data.static || []);
@@ -145,14 +149,14 @@ function openResourceModal() { $("#resource-modal").classList.remove("hidden"); 
 function closeResourceModal() { $("#resource-modal").classList.add("hidden"); }
 
 // ════════════════════════════════════════════════════════════════
-// Prompt 모달 (v3 신설)
+// Prompt 모달
 // ════════════════════════════════════════════════════════════════
 async function loadPromptList() {
   try {
     const resp = await fetch("/api/prompts");
     const data = await resp.json();
-    if (data.error) {
-      renderListError("prompt-list", data.error);
+    if (data.detail || data.error) {
+      renderListError("prompt-list", data.detail || data.error);
       return;
     }
     renderPromptList(data.prompts || []);
@@ -199,7 +203,6 @@ function renderPromptList(items) {
 function firePrompt(btn, items) {
   const idx = btn.dataset.firePrompt;
   const ul = $("#prompt-list");
-  // 인자 수집 — 필수 누락 시 경고
   const inputs = ul.querySelectorAll(`[data-prompt-arg="${idx}"]`);
   const promptMeta = items[Number(idx)];
   const args = {};
@@ -223,7 +226,7 @@ function openPromptModal() { $("#prompt-modal").classList.remove("hidden"); }
 function closePromptModal() { $("#prompt-modal").classList.add("hidden"); }
 
 // ════════════════════════════════════════════════════════════════
-// 첨부 칩 (v2 와 동일)
+// 첨부 chips 관리
 // ════════════════════════════════════════════════════════════════
 function addAttached(uri) {
   if (attached.includes(uri)) return;
@@ -251,9 +254,7 @@ function renderChips() {
 }
 
 // ════════════════════════════════════════════════════════════════
-// 전송 — 두 진입점이 sendRequest 로 합류
-//   메인 [보내기]: question + attach
-//   prompt 카드 [보내기]: prompt + args
+// 요청 전송 — 두 진입점이 sendRequest 로 합류
 // ════════════════════════════════════════════════════════════════
 async function onSubmit(e) {
   e.preventDefault();
@@ -289,9 +290,9 @@ async function sendRequest(body, kind) {
     });
     const data = await resp.json();
 
-    if (!resp.ok || data.error) {
+    if (!resp.ok || data.detail || data.error) {
       answerEl.className = "answer-error";
-      answerEl.textContent = `[X] ${data.error || resp.statusText}`;
+      answerEl.textContent = `[X] ${data.detail || data.error || resp.statusText}`;
       wireLogEl.textContent = "(요청 실패)";
       return;
     }

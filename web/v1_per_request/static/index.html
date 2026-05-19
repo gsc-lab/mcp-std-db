@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>student-mcp · web v3 (Tool + Resource + Prompt)</title>
+  <title>student-mcp · web v1 (요청별 MCP 세션)</title>
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
   <header>
-    <h1>student-mcp · web v3</h1>
-    <p>Tool 기반 chat + Resource 첨부 + Prompt 호출</p>
+    <h1>student-mcp · web v1</h1>
+    <p>요청별 MCP 세션 — 매 요청마다 MCP 서버를 새로 spawn (학습용 단순화)</p>
   </header>
 
   <main>
@@ -19,7 +19,7 @@
         <ul>
           <li><strong>자연어 질문</strong>: 아래 입력란에 적고 [보내기]</li>
           <li><strong>자료 첨부 + 질문</strong>: <code>📎</code> 로 자료 선택 후 질문</li>
-          <li><strong>Prompt 호출</strong>: <code>📋</code> 로 작업 흐름 선택 (서버가 제공하는 표준 분석)</li>
+          <li><strong>Prompt 호출</strong>: <code>📋</code> 로 작업 흐름 선택</li>
         </ul>
       </div>
     </section>
@@ -48,7 +48,7 @@
     </section>
   </main>
 
-  <!-- 자료(Resource) 첨부 모달 — v2 와 동일 -->
+  <!-- 자료(Resource) 첨부 모달 -->
   <div id="resource-modal" class="modal hidden" role="dialog" aria-modal="true">
     <div class="modal-backdrop" data-close-modal></div>
     <div class="modal-content">
@@ -76,7 +76,7 @@
     </div>
   </div>
 
-  <!-- 작업 흐름(Prompt) 호출 모달 — v3 신설 -->
+  <!-- 작업 흐름(Prompt) 호출 모달 -->
   <div id="prompt-modal" class="modal hidden" role="dialog" aria-modal="true">
     <div class="modal-backdrop" data-close-prompt-modal></div>
     <div class="modal-content">

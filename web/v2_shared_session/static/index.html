@@ -3,35 +3,38 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>student-mcp · web v2 (Tool + Resource 첨부)</title>
+  <title>student-mcp · web v2 (공유 MCP 세션)</title>
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
   <header>
     <h1>student-mcp · web v2</h1>
-    <p>Tool 기반 chat + Resource 사용자 첨부 — Desktop "+" 메뉴와 동등</p>
+    <p>공유 MCP 세션 — MCP 세션을 앱 시작 시 1회 생성해 모든 요청이 재사용</p>
   </header>
 
   <main>
     <section id="answer-section">
       <div id="answer" class="answer-empty">
-        질문을 입력하고 <strong>보내기</strong> 버튼을 누르세요.<br>
-        <code>📎</code> 버튼으로 자료를 첨부하면 LLM 이 그 자료를 미리 받아본 상태로 답변합니다.
+        세 가지 방식 중 하나로 시작:
+        <ul>
+          <li><strong>자연어 질문</strong>: 아래 입력란에 적고 [보내기]</li>
+          <li><strong>자료 첨부 + 질문</strong>: <code>📎</code> 로 자료 선택 후 질문</li>
+          <li><strong>Prompt 호출</strong>: <code>📋</code> 로 작업 흐름 선택</li>
+        </ul>
       </div>
     </section>
 
-    <!-- 첨부된 URI 목록 (JS 가 동적으로 채움) -->
     <div id="attached-chips" class="attached-chips"></div>
 
     <form id="ask-form">
       <textarea
         id="question"
         rows="3"
-        placeholder="자연어로 질문하세요. 자료가 필요하면 📎 로 첨부하세요."
-        required
+        placeholder="자연어로 질문하세요. 자료 첨부는 📎, 작업 흐름은 📋."
       ></textarea>
       <div class="form-buttons">
-        <button type="button" id="attach-btn" title="자료 첨부">📎</button>
+        <button type="button" id="attach-btn" title="자료 첨부 (Resource)">📎</button>
+        <button type="button" id="prompt-btn" title="작업 흐름 호출 (Prompt)">📋</button>
         <button type="submit" id="ask-btn">보내기</button>
       </div>
     </form>
@@ -45,15 +48,14 @@
     </section>
   </main>
 
-  <!-- 자료 첨부 모달 — 기본 숨김 -->
-  <div id="resource-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+  <!-- 자료(Resource) 첨부 모달 -->
+  <div id="resource-modal" class="modal hidden" role="dialog" aria-modal="true">
     <div class="modal-backdrop" data-close-modal></div>
     <div class="modal-content">
       <header class="modal-header">
-        <h2 id="modal-title">자료 첨부</h2>
+        <h2>자료 첨부 (Resource)</h2>
         <button type="button" class="modal-close" data-close-modal aria-label="닫기">✕</button>
       </header>
-
       <div class="modal-body">
         <section class="resource-group">
           <h3>정적 자료</h3>
@@ -61,7 +63,6 @@
             <li class="empty">불러오는 중...</li>
           </ul>
         </section>
-
         <section class="resource-group">
           <h3>템플릿 자료 <span class="hint">— 변수 자리를 직접 채워야 합니다</span></h3>
           <ul id="template-list" class="resource-list">
@@ -69,9 +70,31 @@
           </ul>
         </section>
       </div>
-
       <footer class="modal-footer">
         <button type="button" class="modal-close-btn" data-close-modal>닫기</button>
+      </footer>
+    </div>
+  </div>
+
+  <!-- 작업 흐름(Prompt) 호출 모달 -->
+  <div id="prompt-modal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-backdrop" data-close-prompt-modal></div>
+    <div class="modal-content">
+      <header class="modal-header">
+        <h2>작업 흐름 호출 (Prompt)</h2>
+        <button type="button" class="modal-close" data-close-prompt-modal aria-label="닫기">✕</button>
+      </header>
+      <div class="modal-body">
+        <p class="hint" style="margin: 0 0 12px;">
+          서버가 제공하는 표준 작업 흐름을 호출합니다. 각 카드의 [보내기] 를 누르면
+          모달이 닫히고 곧장 요청 — 메인 텍스트박스의 질문/첨부는 무시됩니다.
+        </p>
+        <ul id="prompt-list" class="prompt-list">
+          <li class="empty">불러오는 중...</li>
+        </ul>
+      </div>
+      <footer class="modal-footer">
+        <button type="button" class="modal-close-btn" data-close-prompt-modal>닫기</button>
       </footer>
     </div>
   </div>

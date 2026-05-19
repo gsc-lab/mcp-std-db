@@ -1,4 +1,4 @@
-/* student-mcp web v3 — v2 의 CSS 위에 prompt 모달/카드 추가. */
+/* student-mcp web — 의도적으로 미니멀. 학습 자료라 디자인 시스템 도입 X. */
 
 * { box-sizing: border-box; }
 body {
@@ -127,7 +127,7 @@ main {
 #ask-btn:hover { background: #1d4ed8; }
 #ask-btn:disabled, #attach-btn:disabled, #prompt-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
-/* ── Wire log ─────────────────────────── */
+/* ── 통신 로그 ─────────────────────────── */
 #wire-section h2 {
   font-size: 13px;
   font-weight: 600;
@@ -155,7 +155,7 @@ main {
 .log-in   { color: #c586c0; }
 .log-meta { color: #9cdcfe; }
 
-/* ── 모달 공통 (v2 와 동일) ─────────────────────────── */
+/* ── 모달 공통 ─────────────────────────── */
 .modal { position: fixed; inset: 0; z-index: 50; }
 .modal.hidden { display: none; }
 .modal-backdrop { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.4); }
@@ -188,7 +188,7 @@ main {
 }
 .modal-close-btn:hover { background: #e5e7eb; }
 
-/* ── Resource 모달 자료 목록 (v2 와 동일) ─────────────────────────── */
+/* ── Resource 모달 자료 목록 ─────────────────────────── */
 .resource-group { margin-bottom: 20px; }
 .resource-group:last-child { margin-bottom: 0; }
 .resource-group h3 {
@@ -221,7 +221,7 @@ main {
 }
 .add-btn:hover { background: #1d4ed8; }
 
-/* ── Prompt 모달 카드 (v3 신설) ─────────────────────────── */
+/* ── Prompt 모달 카드 ─────────────────────────── */
 .prompt-list {
   list-style: none; padding: 0; margin: 0;
   display: flex; flex-direction: column; gap: 10px;
