@@ -36,18 +36,5 @@ services:
     ports:
       - "${ADMINER_PORT:-8080}:8080"
 
-  # 대화 메모리 저장소 (web v3) — key=conv:{session_id}, TTL 24h
-  # --appendonly yes: AOF 영속화 (재시작해도 대화 유지)
-  redis:
-    image: redis:7-alpine
-    container_name: student-mcp-redis
-    restart: unless-stopped
-    command: redis-server --appendonly yes
-    ports:
-      - "${REDIS_PORT:-6379}:6379"
-    volumes:
-      - student_redis:/data
-
 volumes:
   student_pgdata:
-  student_redis:

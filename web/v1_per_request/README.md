@@ -44,11 +44,12 @@ python web/v1_per_request/app.py
 | GET | `/api/prompts` | `{prompts: [...]}` |
 | POST | `/api/ask` | `{question, attach}` 또는 `{prompt: {name, args}}` → `{answer, rounds, events}` |
 
-## 한계와 다음 단계
+## 한계 (학습용 단순화)
 
 매 요청마다 MCP 서버 spawn:
 - 요청당 ~200~700ms 오버헤드 (Python 인터프리터 + 의존성 로딩 + DB 연결)
 - 동시 사용자 늘면 시스템 부담
 
-→ **v2_shared_session** 에서 lifespan 으로 세션을 한 번만 열고 모든 요청이 재사용
-하도록 발전. 코드는 거의 같고 *세션 생성 위치만* 변경되니 `diff -r` 로 비교 가능.
+실무에선 lifespan 으로 세션을 한 번만 열어 재사용하거나, 세션 풀 / HTTP transport
+등으로 발전시킨다. 단 그건 *웹/서버 엔지니어링* 영역이라 이 수업 범위 밖 — 여기선
+"MCP Agent 를 웹으로 감싸면 이렇다" 까지만. MCP/Agent/LLM 의 본질은 `agent/` CLI 참조.
