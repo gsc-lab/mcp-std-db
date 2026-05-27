@@ -6,3 +6,9 @@
 # `mcp dev server/main.py` 가 Inspector 를 띄울 때 spawn 명령으로 사용.
 # uv 는 격리 환경에서 명령을 실행하는 도구 (Astral 제작).
 uv>=0.4
+
+# agent/07_langgraph.py — 손코딩(03) vs 프레임워크 대조용 capstone.
+# LangChain 생태계는 버전 변동이 잦아 동작 검증된 버전대로 핀.
+langgraph>=1.2,<2
+langchain-anthropic>=1.4,<2
+langchain-mcp-adapters>=0.2,<1
