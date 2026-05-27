@@ -12,14 +12,15 @@ MCP 와 LLM 의 상호작용에 집중하기 위해 웹 학습 부담은 최소.
 |------|------|------|
 | v1 | [v1_per_request/](v1_per_request) | 요청별 MCP 세션 — 매 요청마다 spawn (학습용 단순화) |
 | v2 | [v2_shared_session/](v2_shared_session) | 공유 MCP 세션 — lifespan 으로 앱 시작 시 1회만 (실무 패턴) |
+| v3 | [v3_conversation/](v3_conversation) | 대화 메모리 — Redis 로 이전 대화 기억 (진짜 챗봇) |
 
-기능은 두 단계 모두 동일 (Tool/Resource/Prompt 다 노출). **차이는 아키텍처 하나**:
-*세션을 매 요청마다 생성하느냐 vs 앱 라이프타임 동안 재사용하느냐*.
+- v1 → v2: **아키텍처** 변화 (세션 생성 위치). 기능 동일.
+- v2 → v3: **기능** 추가 (대화 메모리). 매 요청 독립 → 맥락 유지.
 
 ```bash
-diff -r web/v1_per_request web/v2_shared_session
+diff -r web/v1_per_request web/v2_shared_session   # lifespan 도입
+diff -r web/v2_shared_session web/v3_conversation  # Redis 메모리 레이어
 ```
-→ `app.py` 의 lifespan + 세션 사용 위치만 다름. 비즈니스 로직 본문은 동일.
 
 ## 공통 사전 조건
 
