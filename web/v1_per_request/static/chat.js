@@ -1,22 +1,22 @@
 /**
- * student-mcp web — Vanilla JS 프론트엔드
+ * student-mcp web — 외부 프레임워크 없는 Vanilla JS 프론트엔드
  *
  * 동작:
- *   페이지 로드 시 GET /api/resources, GET /api/prompts 로 두 모달 채움.
- *   사용자가 [보내기] 누르면 POST /api/ask 로 요청 → 답변 + 통신 로그 표시.
+ *   페이지가 로드되면 GET /api/resources, GET /api/prompts 로 두 모달의 목록을 채운다.
+ *   사용자가 [보내기]를 누르면 POST /api/ask 로 요청하고, 답변과 통신 로그를 표시한다.
  *
  * 세 가지 진입점:
  *   1) 메인 [보내기]: question + attach (자연어 또는 첨부 포함)
  *   2) 📎 모달 → [첨부] 버튼: attached 배열에 URI 추가
  *   3) 📋 모달 → 카드 [보내기]: prompt 호출, 메인 입력은 무시
  *
- * 의존성 없음 (fetch + DOM 만).
+ * 의존성은 없다. fetch 와 DOM API 만 사용한다.
  */
 
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 
-// 사용자가 첨부한 URI 목록.
+// 사용자가 선택해 첨부한 Resource URI 목록.
 const attached = [];
 
 document.addEventListener("DOMContentLoaded", async () => {
@@ -45,12 +45,12 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   });
 
-  // 페이지 로드 시 두 모달의 내용 미리 로드.
+  // 페이지가 열릴 때 Resource / Prompt 목록을 미리 불러온다.
   await Promise.all([loadResourceList(), loadPromptList()]);
 });
 
 // ════════════════════════════════════════════════════════════════
-// Resource 모달
+// Resource 첨부 모달
 // ════════════════════════════════════════════════════════════════
 async function loadResourceList() {
   try {
@@ -149,7 +149,7 @@ function openResourceModal() { $("#resource-modal").classList.remove("hidden"); 
 function closeResourceModal() { $("#resource-modal").classList.add("hidden"); }
 
 // ════════════════════════════════════════════════════════════════
-// Prompt 모달
+// Prompt 실행 모달
 // ════════════════════════════════════════════════════════════════
 async function loadPromptList() {
   try {
@@ -226,7 +226,7 @@ function openPromptModal() { $("#prompt-modal").classList.remove("hidden"); }
 function closePromptModal() { $("#prompt-modal").classList.add("hidden"); }
 
 // ════════════════════════════════════════════════════════════════
-// 첨부 chips 관리
+// 첨부 chip 목록 관리
 // ════════════════════════════════════════════════════════════════
 function addAttached(uri) {
   if (attached.includes(uri)) return;
@@ -254,7 +254,7 @@ function renderChips() {
 }
 
 // ════════════════════════════════════════════════════════════════
-// 요청 전송 — 두 진입점이 sendRequest 로 합류
+// 요청 전송 — 자연어 질문과 Prompt 실행이 모두 sendRequest 로 모인다.
 // ════════════════════════════════════════════════════════════════
 async function onSubmit(e) {
   e.preventDefault();

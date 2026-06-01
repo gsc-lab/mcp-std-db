@@ -1,4 +1,4 @@
-/* student-mcp web — 의도적으로 미니멀. 학습 자료라 디자인 시스템 도입 X. */
+/* student-mcp web — 학습용 예제라 별도 디자인 시스템 없이 최소 스타일만 둔다. */
 
 * { box-sizing: border-box; }
 body {
@@ -50,7 +50,7 @@ main {
   font-size: 12px;
 }
 
-/* ── 첨부 chips ─────────────────────────── */
+/* ── 첨부 chip 목록 ─────────────────────── */
 .attached-chips {
   display: flex;
   flex-wrap: wrap;

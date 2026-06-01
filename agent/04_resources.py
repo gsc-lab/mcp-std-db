@@ -1,38 +1,38 @@
 """
-Stage 3 — Resource 첨부 REPL (application/user-controlled 컨텍스트)
+Stage 3 — Resource 를 첨부하는 REPL (앱/사용자가 고르는 컨텍스트)
 
-01~03 은 전부 *Tool* 만 썼다. Tool 은 **모델이** "이 데이터 필요해" 하고 호출한다
-(model-controlled). 이 파일은 MCP 의 두 번째 primitive — **Resource** 를 쓴다.
+01~03 은 Tool 만 사용했다. Tool 은 모델이 "이 데이터가 필요하다" 고 판단할 때
+호출한다(model-controlled). 이 파일에서는 MCP 의 두 번째 primitive 인 Resource 를 쓴다.
 
-핵심 — Tool 과 Resource 의 차이는 "기능" 이 아니라 "누가 부르느냐":
-  - Tool      = POST 느낌. 모델이 turn 중에 호출. (wire: tools/call)
-  - Resource  = GET  느낌. URI 로 식별되는 read-only 자료를, *사람/앱이* 골라
-                컨텍스트에 미리 주입. (wire: resources/read)
+핵심 — Tool 과 Resource 의 차이는 "무엇을 할 수 있느냐" 보다 "누가 선택하느냐" 다:
+  - Tool      = 모델이 turn 중에 호출한다. (RPC: tools/call)
+  - Resource  = URI 로 식별되는 읽기 전용 자료를 사람/앱이 골라
+                컨텍스트에 미리 넣는다. (RPC: resources/read)
 
-Claude Desktop 엔 Resource 를 고르는 "@첨부" UI 가 있다. CLI 엔 그 affordance 가
-없으니 여기선 /attach 명령으로 그 UI 를 흉내낸다 — 사용자가 자료를 직접 골라
-붙이고(=user/app-controlled), 붙은 자료는 매 turn system 프롬프트로 주입된다.
+Claude Desktop 에는 Resource 를 고르는 "@첨부" UI 가 있다. CLI 에는 그런 UI 가 없으므로
+여기서는 /attach 명령으로 같은 역할을 흉내 낸다. 사용자가 직접 자료를 고르고,
+첨부된 자료는 매 turn system 프롬프트로 주입된다.
 
 03 → 04 차이:
-  - run_turns() 에 system 인자 추가 — 첨부된 Resource 가 여기로 들어간다.
-  - /attach <uri>   서버에서 resources/read → attached 에 저장 (system 에 주입됨)
+  - run_turns() 에 system 인자 추가 — 첨부된 Resource 내용이 여기로 들어간다.
+  - /attach <uri>   서버에서 resources/read → attached 에 저장 (system 에 주입)
   - /detach <uri>   첨부 해제
   - /ctx            현재 첨부된 자료 목록
   - /resources      서버가 노출한 Resource 목록 + 템플릿 목록 조회
   - 대화 메모리(messages 누적)는 03 그대로 유지.
 
-체감 포인트 — 붙이면 도구 호출이 사라진다:
+체감 포인트 — 자료를 붙이면 도구 호출이 줄어든다:
   (붙이기 전)  질문> 학과 다 알려줘
-               → 모델이 도구를 호출할 수도 있다 (wire 에 >> tools/call)
+               → 모델이 도구를 호출할 수도 있다 (로그에 >> tools/call 표시)
   /attach departments://all
   (붙인 후)    질문> 학과 다 알려줘
-               → 자료가 이미 system 에 있으니 도구 없이 즉답 (tools/call 없음)
-  로그의 라운드트립 차이로 "앱이 컨텍스트를 통제하면 모델 행동이 바뀐다" 가 보인다.
+               → 자료가 이미 system 에 있으니 도구 없이 답할 수 있다.
+  로그 차이를 보면 "앱이 컨텍스트를 미리 제공하면 모델 행동이 달라진다" 는 점이 보인다.
 
 템플릿 자료:
   departments://all          정적 — /resources 목록에 뜬다.
   courses://{department_code} 템플릿 — /attach courses://GSC 처럼 URI 를 직접 채운다.
-  students://{student_no}     템플릿 — 학번은 목록에 안 뜬다(템플릿의 특성).
+  students://{student_no}     템플릿 — 학번은 목록에 직접 뜨지 않는다.
                               알고 있는 학번으로 /attach students://20240001.
 
 실행:
@@ -63,19 +63,28 @@ SERVER_PATH = REPO_ROOT / "server" / "main.py"
 
 
 def venv_python() -> Path:
-    """프로젝트 venv 의 파이썬 경로."""
+    """MCP 서버 실행에 사용할 프로젝트 가상환경의 Python 경로."""
     if platform.system() == "Windows":
         return REPO_ROOT / ".venv" / "Scripts" / "python.exe"
     return REPO_ROOT / ".venv" / "bin" / "python"
 
 
 def log(direction: str, text: str) -> None:
-    """통신 로그.  >> 보냄,  << 받음,  ** 상태 변화."""
+    """통신 흐름을 보기 쉽게 출력한다. >> 보냄, << 받음, ** 상태."""
     print(f"{direction} {text}", flush=True)
 
 
 def mcp_tool_to_anthropic(tool) -> dict:
-    """MCP Tool 정의 → Anthropic API 의 tool 형식 (필드 이름만 변환)."""
+    """MCP Tool 정의를 Anthropic API 가 요구하는 tool 형식으로 바꾼다.
+
+    입력 — tool: mcp.types.Tool
+        .name        : str
+        .description : str | None
+        .inputSchema : dict        # JSON Schema
+
+    반환 — dict (Anthropic messages.create 의 `tools` 목록에 들어갈 원소)
+        {"name": str, "description": str, "input_schema": dict}
+    """
     return {
         "name": tool.name,
         "description": tool.description or "",
@@ -84,7 +93,16 @@ def mcp_tool_to_anthropic(tool) -> dict:
 
 
 def extract_text_from_mcp_result(content_blocks) -> str:
-    """MCP tools/call 응답에서 텍스트만 추출."""
+    """MCP tools/call 응답의 content 블록들을 하나의 문자열로 합친다.
+
+    입력 — content_blocks: list[ContentBlock]   (CallToolResult.content)
+        TextContent       : .type="text",     .text: str
+        ImageContent      : .type="image",    .data, .mimeType  (여기서는 repr 처리)
+        EmbeddedResource  : .type="resource", .resource         (여기서는 repr 처리)
+        AudioContent / ResourceLink: 같은 방식으로 repr 처리
+
+    반환 — TextContent.text 는 줄바꿈으로 연결하고, 나머지 타입은 repr 로 표현한 문자열.
+    """
     parts = []
     for b in content_blocks:
         if getattr(b, "type", None) == "text":
@@ -95,10 +113,10 @@ def extract_text_from_mcp_result(content_blocks) -> str:
 
 
 def extract_resource_text(result) -> str:
-    """MCP resources/read 응답에서 텍스트만 추출.
+    """MCP resources/read 응답의 contents 를 하나의 문자열로 합친다.
 
-    contents 는 TextResourceContents(.text) 또는 BlobResourceContents 의 리스트다.
-    우리 서버는 전부 application/json 텍스트이므로 .text 만 모은다.
+    contents 는 TextResourceContents(.text) | BlobResourceContents(.blob) 의 리스트.
+    이 서버는 application/json 텍스트를 반환하므로 .text 를 우선 사용한다.
     """
     parts = []
     for c in result.contents:
@@ -108,10 +126,10 @@ def extract_resource_text(result) -> str:
 
 
 def build_system(attached: dict[str, str]) -> str | None:
-    """첨부된 Resource 들을 하나의 system 프롬프트로 합친다.
+    """첨부된 Resource 들을 하나의 system 프롬프트 문자열로 합친다.
 
-    이게 "application-controlled context" 의 실체다 — 대화(messages) 와 분리된,
-    앱이 큐레이션한 컨텍스트 블록. 비어 있으면 None (system 자체를 안 보냄).
+    이것이 application-controlled context 의 실제 모습이다. 대화(messages)와 별도로
+    앱이 골라 넣은 참고 자료 블록이며, 첨부가 없으면 system 자체를 보내지 않는다.
     """
     if not attached:
         return None
@@ -124,10 +142,10 @@ def build_system(attached: dict[str, str]) -> str | None:
 
 
 async def run_turns(session, anthropic, tools_for_claude, messages, system) -> str:
-    """한 질문에 대한 multi-turn 루프 (03 과 동일). 차이는 system 인자 하나뿐.
+    """질문 하나를 처리하는 multi-turn 루프. 03 과 같고 system 인자만 추가됐다.
 
-    system 에는 build_system() 이 만든 "첨부 자료 블록" 이 들어온다. 이 자료가
-    이미 컨텍스트에 있으면 모델은 같은 데이터를 얻으려 도구를 부를 이유가 없다.
+    system 에는 build_system() 이 만든 첨부 자료 블록이 들어온다. 필요한 자료가
+    이미 컨텍스트에 있으면 모델은 같은 데이터를 얻기 위해 도구를 부르지 않아도 된다.
     """
     for turn in range(1, MAX_TURNS + 1):
         kwargs = dict(
@@ -168,11 +186,25 @@ async def run_turns(session, anthropic, tools_for_claude, messages, system) -> s
 
 
 async def cmd_resources(session) -> None:
-    """서버가 노출한 Resource 카탈로그 출력.
+    """서버가 제공하는 Resource 목록을 조회한다.
 
-    Tool 은 list_tools, Resource 는 list_resources — 둘은 *별개 카탈로그* 다.
-    정적 Resource 는 목록에 뜨지만, 템플릿(courses://{...}) 은 'uriTemplate' 로
-    형태만 알려준다 — 구체 URI(파라미터) 는 사용자가 직접 채워야 한다.
+    Resource 는 URI 로 식별되는 읽기 전용 자료이며, Tool 과는 별도 목록이다.
+    정적 Resource 는 완성된 URI 로 제공되고, 템플릿 Resource 는 사용자가 `{param}`
+    자리를 채워 /attach 한다. 실제 본문 읽기는 cmd_attach() 에서 처리한다.
+
+    반환 — await session.list_resources() → ListResourcesResult
+        .resources: list[Resource]
+            .uri         : AnyUrl
+            .name        : str
+            .description : str | None
+            .mimeType    : str | None
+
+    반환 — await session.list_resource_templates() → ListResourceTemplatesResult
+        .resourceTemplates: list[ResourceTemplate]
+            .uriTemplate : str        # 예: "courses://{department_code}"
+            .name        : str
+            .description : str | None
+            .mimeType    : str | None
     """
     log(">>", "resources/list")
     res = await session.list_resources()
@@ -188,7 +220,25 @@ async def cmd_resources(session) -> None:
 
 
 async def cmd_attach(session, attached: dict[str, str], uri: str) -> None:
-    """URI 로 Resource 를 읽어 attached 에 저장. 이게 wire 의 resources/read 다."""
+    """Resource 본문을 읽어 attached dict 에 저장한다.
+
+    이후 매 turn build_system() 이 attached 내용을 system 프롬프트에 넣는다.
+    즉, 사용자가 고른 자료가 모델의 참고 컨텍스트가 된다.
+
+    반환 — await session.read_resource(uri) → ReadResourceResult
+        .contents: list[TextResourceContents | BlobResourceContents]
+            TextResourceContents (텍스트 자료):
+                .uri      : AnyUrl
+                .mimeType : str | None
+                .text     : str
+            BlobResourceContents (바이너리 자료):
+                .uri      : AnyUrl
+                .mimeType : str | None
+                .blob     : str (base64)
+
+    NOTE: 서버가 200 OK 와 함께 {"error": ...} JSON 을 반환하는 경우가 있다.
+    이때는 첨부하지 않아야 에러 메시지가 참고 자료처럼 주입되는 일을 막을 수 있다.
+    """
     log(">>", f"resources/read: {uri}")
     try:
         result = await session.read_resource(AnyUrl(uri))
@@ -197,9 +247,8 @@ async def cmd_attach(session, attached: dict[str, str], uri: str) -> None:
         return
     text = extract_resource_text(result)
 
-    # 예외는 안 났지만 서버가 에러를 payload 로 돌려주는 경우(예: 없는 학번 →
-    # {"error": ...})도 있다. 이걸 첨부하면 에러 JSON 이 참고 자료로 system 에
-    # 주입되므로, 서버 컨벤션({"error": ...})을 감지해 첨부를 막는다.
+    # 예외는 없었지만 서버가 payload 로 에러를 알려주는 경우가 있다(예: 없는 학번).
+    # 이 JSON 을 첨부하면 에러 메시지가 참고 자료로 들어가므로 미리 걸러낸다.
     try:
         payload = json.loads(text)
     except json.JSONDecodeError:
@@ -232,12 +281,11 @@ async def repl() -> None:
 
             client = AsyncAnthropic()
 
-            # 대화 메모리 (03 과 동일) — turn 간 누적.
+            # 대화 이력은 03 과 동일하게 turn 간 누적한다.
             messages: list[dict] = []
 
-            # ★ 첨부된 Resource — {uri: 본문}. 사용자가 /attach 로 고른 자료.
-            #   매 turn build_system() 으로 system 프롬프트에 주입된다.
-            #   이게 "앱/사용자가 통제하는 컨텍스트" 의 실체.
+            # 첨부된 Resource: 사용자가 /attach 로 고른 {uri: 본문} 자료.
+            # 매 turn build_system() 을 통해 system 프롬프트에 주입된다.
             attached: dict[str, str] = {}
 
             print("\n=== 대화 시작 ===")
@@ -292,7 +340,7 @@ async def repl() -> None:
                         print(f"첨부돼 있지 않음: {uri}")
                     continue
 
-                # ── 질문 처리 (03 과 동일 + system 주입) ────────────────
+                # ── 질문 처리: 03 의 흐름에 첨부 자료 system 주입만 더한다. ──
                 messages.append({"role": "user", "content": line})
                 system = build_system(attached)
                 log("**", f"(대화 {len(messages)} 메시지, 첨부 {len(attached)} 건)")

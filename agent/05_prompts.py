@@ -1,31 +1,31 @@
 """
-Stage 3 — Prompt 실행 REPL (user-controlled 워크플로)
+Stage 3 — Prompt 를 실행하는 REPL (사용자가 고르는 작업 흐름)
 
-MCP primitive 트리오의 마지막 — Prompt. 누가 호출을 결정하느냐로 셋을 갈라보면:
+MCP primitive 세 가지 중 마지막은 Prompt 다. 누가 호출을 결정하느냐로 구분하면:
   - Tool     (01~03) = 모델이 turn 중에 호출        (model-controlled)
   - Resource (04)     = 사용자가 /attach 로 컨텍스트 주입 (app/user-controlled)
   - Prompt   (이 파일)= 사용자가 *고르는* 재사용 템플릿   (user-controlled)
 
-Prompt 는 Claude Desktop/Code 에서 **슬래시 명령**으로 뜨는 바로 그것이다. 사용자가
-이름 + 인자로 트리거하면, 서버가 *미리 만들어둔 메시지 목록* 을 돌려준다. 우리는 그걸
-대화(messages)에 심고(seed) 평소 multi-turn 루프를 돌린다. 그래서 여기선 prompt 가
-literally 슬래시 명령 — /prompt <name> <인자...> 로 실행한다.
+Prompt 는 Claude Desktop/Code 에서 슬래시 명령으로 보이는 재사용 작업 흐름이다.
+사용자가 이름과 인자를 넘기면 서버가 미리 준비한 메시지 목록을 돌려준다.
+클라이언트는 그 메시지를 대화(messages)에 넣고, 평소처럼 multi-turn 루프를 실행한다.
+이 예제에서는 /prompt <name> <인자...> 명령으로 Prompt 를 실행한다.
 
 서버의 두 가지 Prompt 패턴 (server/main.py 참고):
   (A) EmbeddedResource 포함 — analyze_student_risk, course_catalog
-      서버가 Resource(students://, courses://)를 *미리 읽어* 메시지에 박아 보낸다.
-      LLM 은 추가 호출 없이 데이터를 받아 분석을 시작. → Prompt 가 Resource 를 품는다.
+      서버가 Resource(students://, courses://)를 미리 읽어 메시지에 포함해 보낸다.
+      LLM 은 추가 호출 없이 데이터를 받아 분석을 시작한다. → Prompt 가 Resource 를 품는다.
   (B) Tool 호출 안내 — compare_departments
       지시문 텍스트만 반환. LLM 이 알맞은 Tool(department_stats)을 직접 호출.
 
 클라이언트가 하는 일 — 타입 평탄화:
-  MCP 의 EmbeddedResource 는 Anthropic API 의 타입이 아니다. 그래서 get_prompt 가
-  돌려준 메시지의 content 를 Anthropic 의 text 블록으로 *변환(flatten)* 해야 한다.
-  prompt_content_to_block() 이 그 다리다.
+  MCP 의 EmbeddedResource 는 Anthropic API 에 그대로 보낼 수 있는 타입이 아니다.
+  그래서 get_prompt 가 돌려준 content 를 Anthropic 의 text 블록으로 변환해야 한다.
+  prompt_content_to_block() 이 이 변환을 담당한다.
 
 03 → 05 차이:
   - /prompts          서버가 노출한 Prompt 목록 + 인자 조회 (prompts/list)
-  - /prompt <name> …  Prompt 실행 → 서버 메시지를 messages 에 seed → 루프 (prompts/get)
+  - /prompt <name> …  Prompt 실행 → 서버 메시지를 messages 에 추가 → 루프 (prompts/get)
   - 대화 메모리(messages 누적)는 03 그대로. Prompt 결과도 그 위에 쌓인다.
 
 실행:
@@ -58,19 +58,28 @@ SERVER_PATH = REPO_ROOT / "server" / "main.py"
 
 
 def venv_python() -> Path:
-    """프로젝트 venv 의 파이썬 경로."""
+    """MCP 서버 실행에 사용할 프로젝트 가상환경의 Python 경로."""
     if platform.system() == "Windows":
         return REPO_ROOT / ".venv" / "Scripts" / "python.exe"
     return REPO_ROOT / ".venv" / "bin" / "python"
 
 
 def log(direction: str, text: str) -> None:
-    """통신 로그.  >> 보냄,  << 받음,  ** 상태 변화."""
+    """통신 흐름을 보기 쉽게 출력한다. >> 보냄, << 받음, ** 상태."""
     print(f"{direction} {text}", flush=True)
 
 
 def mcp_tool_to_anthropic(tool) -> dict:
-    """MCP Tool 정의 → Anthropic API 의 tool 형식 (필드 이름만 변환)."""
+    """MCP Tool 정의를 Anthropic API 가 요구하는 tool 형식으로 바꾼다.
+
+    입력 — tool: mcp.types.Tool
+        .name        : str
+        .description : str | None
+        .inputSchema : dict        # JSON Schema
+
+    반환 — dict (Anthropic messages.create 의 `tools` 목록에 들어갈 원소)
+        {"name": str, "description": str, "input_schema": dict}
+    """
     return {
         "name": tool.name,
         "description": tool.description or "",
@@ -79,7 +88,16 @@ def mcp_tool_to_anthropic(tool) -> dict:
 
 
 def extract_text_from_mcp_result(content_blocks) -> str:
-    """MCP tools/call 응답에서 텍스트만 추출."""
+    """MCP tools/call 응답의 content 블록들을 하나의 문자열로 합친다.
+
+    입력 — content_blocks: list[ContentBlock]   (CallToolResult.content)
+        TextContent       : .type="text",     .text: str
+        ImageContent      : .type="image",    .data, .mimeType  (여기서는 repr 처리)
+        EmbeddedResource  : .type="resource", .resource         (여기서는 repr 처리)
+        AudioContent / ResourceLink: 같은 방식으로 repr 처리
+
+    반환 — TextContent.text 는 줄바꿈으로 연결하고, 나머지 타입은 repr 로 표현한 문자열.
+    """
     parts = []
     for b in content_blocks:
         if getattr(b, "type", None) == "text":
@@ -90,11 +108,19 @@ def extract_text_from_mcp_result(content_blocks) -> str:
 
 
 def prompt_content_to_block(content) -> dict:
-    """MCP PromptMessage 의 content 한 개 → Anthropic content 블록(text) 으로 평탄화.
+    """MCP PromptMessage.content 를 Anthropic content 블록으로 변환한다.
 
-    Prompt 메시지의 content 는 TextContent | ImageContent | EmbeddedResource 중 하나.
-    Anthropic API 는 MCP 의 EmbeddedResource 타입을 모르므로, 임베디드 자료는
-    그 안의 텍스트를 꺼내 일반 text 블록으로 펼친다. (이게 Prompt↔Resource 의 다리)
+    MCP 와 Anthropic 은 서로 다른 프로토콜이므로 content 블록 타입도 다르다.
+    특히 MCP 의 EmbeddedResource(URI + 본문)는 Anthropic 이 모르는 타입이다.
+    그래서 text 로 변환하되, 어떤 자료였는지 알 수 있도록 URI 마커를 남긴다.
+
+    변환 규칙:
+        TextContent       → text (그대로)
+        EmbeddedResource  → text ("[첨부 자료 URI]\\n본문")
+        그 외             → repr (Image/Audio/ResourceLink 등은 여기서 단순 처리)
+
+    NOTE: 호출자가 결과를 [block] 형태로 감싼다. Anthropic 의 message.content 는
+    리스트이고, MCP PromptMessage.content 는 단일 블록이기 때문이다.
     """
     ctype = getattr(content, "type", None)
     if ctype == "text":
@@ -109,7 +135,7 @@ def prompt_content_to_block(content) -> dict:
 
 
 async def run_turns(session, anthropic, tools_for_claude, messages) -> str:
-    """한 질문에 대한 multi-turn 루프 (03 과 동일). messages 를 누적하고 답변 반환."""
+    """질문 하나를 처리하는 multi-turn 루프. 03 과 같은 흐름이다."""
     for turn in range(1, MAX_TURNS + 1):
         response = await anthropic.messages.create(
             model=MODEL,
@@ -144,23 +170,51 @@ async def run_turns(session, anthropic, tools_for_claude, messages) -> str:
     return f"[!] {MAX_TURNS} 라운드 한도 도달."
 
 
-async def cmd_prompts(session, prompt_args: dict[str, list[str]]) -> None:
-    """서버가 노출한 Prompt 카탈로그 출력 — Desktop 의 슬래시 명령 메뉴에 해당."""
+async def cmd_prompts(session) -> None:
+    """서버가 제공하는 Prompt 목록을 조회한다.
+
+    Prompt 는 서버가 정의한 재사용 작업 흐름이며, 이름·설명·인자 명세를 가진다.
+    이 함수는 목록만 보여주고, 실제 실행은 cmd_prompt() 에서 처리한다.
+
+    반환 — await session.list_prompts() → ListPromptsResult
+        .prompts: list[Prompt]
+            .name        : str
+            .description : str | None
+            .arguments   : list[PromptArgument] | None
+                .name        : str
+                .description : str | None
+                .required    : bool | None
+    """
     log(">>", "prompts/list")
     res = await session.list_prompts()
     print("\n[프롬프트]  (/prompt <name> <인자...> 로 실행)")
     for p in res.prompts:
-        args = " ".join(f"<{a}>" for a in prompt_args.get(p.name, []))
+        args = " ".join(f"<{a.name}>" for a in (p.arguments or []))
         head = f"{p.name} {args}".strip()
         desc = (p.description or "").splitlines()[0]
         print(f"  {head}\n      {desc}")
 
 
 async def cmd_prompt(session, prompt_args, messages, name, values) -> bool:
-    """Prompt 실행 → 서버 메시지를 messages 에 seed. 실행했으면 True.
+    """Prompt 를 실행하고 서버가 돌려준 메시지를 대화 이력에 추가한다.
 
-    get_prompt 가 돌려준 메시지(서버가 미리 만든 것)를 Anthropic 형식으로 평탄화해
-    대화 이력에 덧붙인다. 이후 호출자가 run_turns 로 루프를 돌리면 된다.
+    cmd_prompts() 가 목록 조회라면, 이 함수는 실제 실행 단계다. 서버가 미리 만든
+    메시지 묶음(자료 + 지시문)을 받아 Anthropic 형식으로 바꾼 뒤 messages 에
+    덧붙인다. 이후 run_turns() 가 그 컨텍스트를 바탕으로 답변을 만든다.
+    성공이면 True, 인자 검증 / RPC 실패면 False.
+
+    호출 — await session.get_prompt(name, arguments=arguments)
+        name      : str                # 프롬프트 이름 (예: "analyze_student_risk")
+        arguments : dict[str, str]     # 인자 dict (예: {"student_no": "20210001"})
+
+    반환 — → GetPromptResult
+        .description : str | None
+        .messages    : list[PromptMessage]
+            .role    : "user" | "assistant"
+            .content : ContentBlock    # 단일 블록 (Anthropic 의 list 와 다름)
+                TextContent       : type="text",     text: str
+                EmbeddedResource  : type="resource", resource: TextResourceContents | BlobResourceContents
+                (ImageContent / AudioContent / ResourceLink — 우리 케이스 아님)
     """
     argnames = prompt_args.get(name)
     if argnames is None:
@@ -208,7 +262,7 @@ async def repl() -> None:
             tools_for_claude = [mcp_tool_to_anthropic(t) for t in tools_result.tools]
             log("**", f"도구 목록: {[t.name for t in tools_result.tools]}")
 
-            # Prompt 카탈로그를 미리 받아 인자 이름을 캐싱 (/prompt 파싱에 사용).
+            # Prompt 목록을 미리 받아 인자 이름을 저장해 둔다 (/prompt 파싱에 사용).
             prompts_result = await session.list_prompts()
             prompt_args = {
                 p.name: [a.name for a in (p.arguments or [])]
@@ -218,7 +272,7 @@ async def repl() -> None:
 
             client = AsyncAnthropic()
 
-            # 대화 메모리 (03 과 동일) — Prompt 로 seed 한 메시지도 여기 누적된다.
+            # 대화 이력은 03 과 동일하게 유지한다. Prompt 로 추가한 메시지도 여기에 쌓인다.
             messages: list[dict] = []
 
             print("\n=== 대화 시작 ===")
@@ -245,7 +299,7 @@ async def repl() -> None:
                     print("대화를 초기화했습니다.")
                     continue
                 if line == "/prompts":
-                    await cmd_prompts(session, prompt_args)
+                    await cmd_prompts(session)
                     continue
                 if line.startswith("/prompt"):
                     parts = line.split()
@@ -258,7 +312,7 @@ async def repl() -> None:
                     )
                     if not seeded:
                         continue
-                    # Prompt 가 대화를 seed 했으니 그대로 루프를 돌려 답변 생성.
+                    # Prompt 메시지가 대화에 추가되었으므로 바로 루프를 돌려 답변을 만든다.
                     log("**", f"(대화 {len(messages)} 메시지)")
                     answer = await run_turns(session, client, tools_for_claude, messages)
                     print(f"\n답변> {answer}")

@@ -1,27 +1,28 @@
 """
-Stage 3 — 스트리밍 출력 REPL (SDK UX 레이어)
+Stage 3 — 스트리밍으로 출력하는 REPL (SDK 의 사용자 경험 기능)
 
-01~05 로 MCP primitive 트리오(Tool/Resource/Prompt)는 다 다뤘다. 이 파일은 새 MCP
-개념을 더하지 않는다 — 05 와 *MCP 흐름은 100% 동일* 하고, 바뀌는 건 출력 방식 하나:
-응답을 통째로 기다렸다 찍던 걸, 토큰이 도착하는 대로 실시간으로 흘려보낸다.
+01~05 에서 MCP 의 세 가지 primitive(Tool/Resource/Prompt)는 모두 다뤘다.
+이 파일은 새로운 MCP 개념을 추가하지 않는다. 05 와 MCP 흐름은 같고,
+달라지는 것은 출력 방식 하나다. 응답 전체를 기다렸다가 출력하는 대신,
+토큰이 도착하는 대로 화면에 보여준다.
 
-★ 주의 — 이건 MCP 가 아니라 Anthropic SDK 의 UX 기능이다.
-  prompts/get, tools/call, resources/read 같은 MCP wire 흐름과는 무관하다.
-  스트리밍은 "모델 텍스트를 화면에 어떻게 그리느냐" 의 문제일 뿐.
+주의 — 이것은 MCP 기능이 아니라 Anthropic SDK 의 사용자 경험 기능이다.
+  prompts/get, tools/call, resources/read 같은 MCP 통신 흐름과는 별개다.
+  스트리밍은 "모델 텍스트를 화면에 어떻게 보여줄 것인가" 의 문제다.
 
 05 → 06 차이 (run_turns 한 곳뿐):
-  - messages.create()  (응답 전체 대기 후 반환)
-      → messages.stream()  (async with 컨텍스트)
+  - messages.create()  (응답 전체를 기다렸다가 반환)
+      → messages.stream()  (async with 컨텍스트로 스트림 처리)
   - stream.text_stream     으로 텍스트 토큰을 실시간 print
-  - stream.get_final_message() 로 tool_use 까지 포함된 완성 메시지를 복원
+  - stream.get_final_message() 로 tool_use 까지 포함된 최종 메시지를 복원
         → 복원된 객체는 create() 가 주던 response 와 동일 → 이후 루프 로직 그대로.
-  - 답변이 run_turns 안에서 실시간 출력되므로, 호출부의 print(답변) 제거.
-  - MAX_TOKENS 상향(2048→4096): 스트리밍 도중 max_tokens 로 잘리면 어색하니까.
+  - 답변이 run_turns 안에서 실시간 출력되므로 호출부는 다시 출력하지 않는다.
+  - MAX_TOKENS 상향(2048→4096): 스트리밍 답변이 중간에 잘리면 어색하기 때문이다.
 
 왜 tool_use 루프가 그대로 사는가:
-  text_stream 은 *텍스트만* 흘린다. tool_use 블록은 스트림에 안 실리고,
-  get_final_message() 가 끝에서 통째로 재조립해준다. 그래서 02~05 의
-  "stop_reason 검사 → 도구 실행 → 결과 누적" 구조를 손대지 않아도 된다.
+  text_stream 은 텍스트만 흘려보낸다. tool_use 블록은 text_stream 에 직접 나오지 않고,
+  get_final_message() 가 마지막에 완성 메시지로 재조립해 준다. 그래서 02~05 의
+  "stop_reason 검사 → 도구 실행 → 결과 누적" 구조를 그대로 쓸 수 있다.
 
 실행:
   python agent/06_streaming.py
@@ -46,25 +47,34 @@ load_dotenv()
 
 MODEL = "claude-sonnet-4-6"
 MAX_TURNS = 10
-MAX_TOKENS = 4096  # 05 는 2048. 스트리밍은 긴 답이 잘리면 어색해 상향.
+MAX_TOKENS = 4096  # 05 는 2048. 스트리밍 답변은 중간에 잘리면 어색해 조금 늘린다.
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SERVER_PATH = REPO_ROOT / "server" / "main.py"
 
 
 def venv_python() -> Path:
-    """프로젝트 venv 의 파이썬 경로."""
+    """MCP 서버 실행에 사용할 프로젝트 가상환경의 Python 경로."""
     if platform.system() == "Windows":
         return REPO_ROOT / ".venv" / "Scripts" / "python.exe"
     return REPO_ROOT / ".venv" / "bin" / "python"
 
 
 def log(direction: str, text: str) -> None:
-    """통신 로그.  >> 보냄,  << 받음,  ** 상태 변화."""
+    """통신 흐름을 보기 쉽게 출력한다. >> 보냄, << 받음, ** 상태."""
     print(f"{direction} {text}", flush=True)
 
 
 def mcp_tool_to_anthropic(tool) -> dict:
-    """MCP Tool 정의 → Anthropic API 의 tool 형식 (필드 이름만 변환)."""
+    """MCP Tool 정의를 Anthropic API 가 요구하는 tool 형식으로 바꾼다.
+
+    입력 — tool: mcp.types.Tool
+        .name        : str
+        .description : str | None
+        .inputSchema : dict        # JSON Schema
+
+    반환 — dict (Anthropic messages.create 의 `tools` 목록에 들어갈 원소)
+        {"name": str, "description": str, "input_schema": dict}
+    """
     return {
         "name": tool.name,
         "description": tool.description or "",
@@ -73,7 +83,16 @@ def mcp_tool_to_anthropic(tool) -> dict:
 
 
 def extract_text_from_mcp_result(content_blocks) -> str:
-    """MCP tools/call 응답에서 텍스트만 추출."""
+    """MCP tools/call 응답의 content 블록들을 하나의 문자열로 합친다.
+
+    입력 — content_blocks: list[ContentBlock]   (CallToolResult.content)
+        TextContent       : .type="text",     .text: str
+        ImageContent      : .type="image",    .data, .mimeType  (여기서는 repr 처리)
+        EmbeddedResource  : .type="resource", .resource         (여기서는 repr 처리)
+        AudioContent / ResourceLink: 같은 방식으로 repr 처리
+
+    반환 — TextContent.text 는 줄바꿈으로 연결하고, 나머지 타입은 repr 로 표현한 문자열.
+    """
     parts = []
     for b in content_blocks:
         if getattr(b, "type", None) == "text":
@@ -84,11 +103,10 @@ def extract_text_from_mcp_result(content_blocks) -> str:
 
 
 def prompt_content_to_block(content) -> dict:
-    """MCP PromptMessage 의 content 한 개 → Anthropic content 블록(text) 으로 평탄화.
+    """MCP PromptMessage.content 를 Anthropic content 블록으로 변환한다.
 
-    Prompt 메시지의 content 는 TextContent | ImageContent | EmbeddedResource 중 하나.
-    Anthropic API 는 MCP 의 EmbeddedResource 타입을 모르므로, 임베디드 자료는
-    그 안의 텍스트를 꺼내 일반 text 블록으로 펼친다. (이게 Prompt↔Resource 의 다리)
+    EmbeddedResource 는 Anthropic 이 모르는 타입이므로 text 로 변환하고 URI 마커를 남긴다.
+    자세한 변환 규칙은 `05_prompts.py` 의 같은 이름 함수를 참고한다.
     """
     ctype = getattr(content, "type", None)
     if ctype == "text":
@@ -103,14 +121,41 @@ def prompt_content_to_block(content) -> dict:
 
 
 async def run_turns(session, anthropic, tools_for_claude, messages) -> None:
-    """한 질문에 대한 multi-turn 루프. 05 와 MCP 흐름 동일, 출력만 스트리밍.
+    """질문 하나를 처리하는 multi-turn 루프의 스트리밍 출력 버전.
 
-    답변은 이 함수 안에서 실시간으로 print 된다 → 호출부는 결과를 다시 찍지 않는다.
+    MCP 흐름은 05 와 같다. 차이는 Anthropic SDK 호출 방식뿐이다.
+    messages.create() 는 완성된 응답을 반환하고, messages.stream() 은 토큰이 도착하는
+    즉시 받을 수 있게 해 준다. 이 차이는 MCP 통신과는 무관하다.
+
+    Anthropic SDK 스트리밍 API:
+        async with anthropic.messages.stream(**kwargs) as stream:
+            async for text in stream.text_stream:           # 텍스트 조각(chunk: str)
+                print(text, end="", flush=True)
+            response = await stream.get_final_message()     # Message — create() 와 동일 shape
+                                                            # tool_use 같은 비-텍스트 블록도 여기서 복원
+        stream                                              # MessageStreamManager (context manager)
+        stream.text_stream                                  # AsyncIterator[str]  — *텍스트만* 흘림
+        stream.get_final_message() → Message
+            .content      : list[ContentBlock]   # text / tool_use 등 모두 포함
+            .stop_reason  : "end_turn" | "tool_use" | ...
+            .usage        : Usage                # 토큰 사용량
+
+    답변은 이 함수 안에서 실시간으로 출력한다. 따라서 호출자는 결과를 다시 출력하지 않는다.
+    tool_use 루프 구조는 02~05 와 동일하게 동작한다. 비-텍스트 블록은 text_stream 에
+    나오지 않고, get_final_message() 가 마지막에 완성 메시지로 복원하기 때문이다.
+
+    트레이드오프:
+        + 첫 토큰이 도착하는 즉시 화면에 보여 줄 수 있다.
+        + 긴 답변의 진행 가시화
+        - 전체 응답 시간 자체는 거의 같다. 끝까지 받아야 완료된다.
+        - async context manager 와 최종 메시지 복원 때문에 코드가 조금 길어진다.
     """
     for turn in range(1, MAX_TURNS + 1):
-        # ── 05 와의 유일한 차이 ─────────────────────────────────────
-        #   create() 대신 stream(). text_stream 으로 토큰을 실시간 출력하고,
-        #   get_final_message() 로 tool_use 포함 완성 메시지를 복원한다.
+        # ── 스트리밍 (05 와의 유일한 차이) ─────────────────────────────
+        #   1) stream() 컨텍스트에 진입해 응답이 오는 동안 스트림을 유지한다.
+        #   2) text_stream 으로 텍스트 토큰을 실시간으로 받는다.
+        #   3) get_final_message() 로 tool_use 등을 포함한 최종 Message 를 복원한다.
+        #   복원된 response 는 create() 의 반환값과 같은 구조라 이후 로직은 그대로 쓴다.
         async with anthropic.messages.stream(
             model=MODEL,
             max_tokens=MAX_TOKENS,
@@ -118,14 +163,14 @@ async def run_turns(session, anthropic, tools_for_claude, messages) -> None:
             messages=messages,
         ) as stream:
             streamed = False
-            async for text in stream.text_stream:
+            async for text in stream.text_stream:           # 토큰 단위로 도착한다.
                 if not streamed:
                     print("\n답변> ", end="", flush=True)
                     streamed = True
                 print(text, end="", flush=True)
-            response = await stream.get_final_message()
+            response = await stream.get_final_message()     # 완성된 Message 로 복원한다.
         if streamed:
-            print()  # 실시간 출력한 줄을 닫는다
+            print()  # 실시간 출력한 줄을 닫는다 (개행)
         # ────────────────────────────────────────────────────────────
         log("<<", f"turn {turn} — stop_reason={response.stop_reason}")
 
@@ -154,7 +199,11 @@ async def run_turns(session, anthropic, tools_for_claude, messages) -> None:
 
 
 async def cmd_prompts(session, prompt_args: dict[str, list[str]]) -> None:
-    """서버가 노출한 Prompt 카탈로그 출력 — Desktop 의 슬래시 명령 메뉴에 해당."""
+    """서버가 제공하는 Prompt 목록을 출력한다.
+
+    반환 구조 설명은 `05_prompts.py` 의 같은 이름 함수를 참고한다.
+    06 의 핵심은 스트리밍이므로 Prompt 관련 코드는 거의 그대로 사용한다.
+    """
     log(">>", "prompts/list")
     res = await session.list_prompts()
     print("\n[프롬프트]  (/prompt <name> <인자...> 로 실행)")
@@ -166,10 +215,10 @@ async def cmd_prompts(session, prompt_args: dict[str, list[str]]) -> None:
 
 
 async def cmd_prompt(session, prompt_args, messages, name, values) -> bool:
-    """Prompt 실행 → 서버 메시지를 messages 에 seed. 실행했으면 True.
+    """Prompt 를 실행하고 서버 메시지를 messages 에 추가한다.
 
-    get_prompt 가 돌려준 메시지(서버가 미리 만든 것)를 Anthropic 형식으로 평탄화해
-    대화 이력에 덧붙인다. 이후 호출자가 run_turns 로 루프를 돌리면 된다.
+    호출 인자와 반환 구조 설명은 `05_prompts.py` 의 같은 이름 함수를 참고한다.
+    06 의 핵심은 스트리밍이므로 이 함수의 역할은 05 와 같다.
     """
     argnames = prompt_args.get(name)
     if argnames is None:
@@ -226,7 +275,7 @@ async def repl() -> None:
 
             client = AsyncAnthropic()
 
-            # 대화 메모리 (03 과 동일) — Prompt 로 seed 한 메시지도 여기 누적된다.
+            # 대화 이력은 03 과 동일하게 유지한다. Prompt 로 추가한 메시지도 여기에 쌓인다.
             messages: list[dict] = []
 
             print("\n=== 대화 시작 ===")
@@ -266,7 +315,7 @@ async def repl() -> None:
                     )
                     if not seeded:
                         continue
-                    # Prompt 가 대화를 seed 했으니 그대로 루프를 돌려 (실시간) 답변.
+                    # Prompt 메시지가 대화에 추가되었으므로 바로 루프를 돌려 실시간 답변을 만든다.
                     log("**", f"(대화 {len(messages)} 메시지)")
                     await run_turns(session, client, tools_for_claude, messages)
                     continue

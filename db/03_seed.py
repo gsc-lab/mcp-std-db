@@ -7,9 +7,9 @@
     python db/03_seed.py --students 30 --seed 7
 
 특징:
-- 기존 데이터를 TRUNCATE 후 새로 채우므로 idempotent (반복 실행 안전)
-- --seed 인자로 같은 결과 재현 가능
-- GPA / 상태 / 진행중 비율을 의도적으로 분포시켜 LLM 질문이 의미 있게 답변되게 함
+- 기존 데이터를 TRUNCATE 후 새로 채우므로 반복 실행해도 결과가 예측 가능하다.
+- --seed 인자로 같은 결과를 재현할 수 있다.
+- GPA, 학적 상태, 진행 중 수강 비율을 일부러 분포시켜 LLM 질문이 의미 있게 답변되도록 한다.
 """
 import argparse
 import os
@@ -21,7 +21,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# ── 정적 마스터 데이터 ─────────────────────────────────────
+# ── 예제에서 고정으로 사용할 마스터 데이터 ───────────────────
 DEPARTMENTS = [
     ("GSC", "글로벌시스템융합과", "글로벌융합대학"),
     ("NUR", "간호학과",           "보건의료대학"),
@@ -75,7 +75,7 @@ COURSES_BY_DEPT = {
 
 SEMESTERS = [(2023, "FALL"), (2024, "SPRING"), (2024, "FALL"), (2025, "SPRING")]
 
-# 한국식 이름 풀
+# 한국식 이름을 만들기 위한 성/이름 후보.
 SURNAMES = list("김이박최정강조윤장임한오서신권황송")
 GIVEN_NAMES = [
     "민준", "서연", "도윤", "지우", "예준", "수아", "주원", "지은", "하준", "지유",
@@ -91,7 +91,7 @@ LETTER_GRADE_TO_POINT = {
     "F": 0.0, "P": None, "NP": None, "W": None,
 }
 
-# (가중치, 등급 풀) — 학생을 GPA 클래스에 분배
+# (가중치, 등급 풀) — 학생들을 GPA 수준별 그룹에 분배한다.
 GPA_CLASSES = [
     (0.10, ["A+", "A+", "A", "A", "A-", "B+"]),       # top
     (0.50, ["A", "A-", "B+", "B+", "B", "B-"]),       # high
@@ -157,13 +157,13 @@ def main():
         with conn.cursor() as cur:
             cur.execute("SET search_path TO student_db, public")
 
-            # 0) 기존 데이터 비우기
+            # 0) 기존 데이터를 모두 비운다.
             cur.execute(
                 "TRUNCATE enrollments, courses, students, instructors, departments "
                 "RESTART IDENTITY CASCADE"
             )
 
-            # 1) 학과
+            # 1) 학과 마스터 입력
             depts: dict[str, int] = {}
             for code, name, college in DEPARTMENTS:
                 cur.execute(
@@ -173,7 +173,7 @@ def main():
                 )
                 depts[code] = cur.fetchone()[0]
 
-            # 2) 교수
+            # 2) 교수 마스터 입력
             instructors: dict[str, list[int]] = {dc: [] for dc in depts}
             empCounter = 1
             for deptCode, profList in INSTRUCTORS_BY_DEPT.items():
@@ -188,7 +188,7 @@ def main():
                     )
                     instructors[deptCode].append(cur.fetchone()[0])
 
-            # 3) 강의
+            # 3) 강의 마스터 입력
             courses: list[tuple[int, str]] = []  # (course_id, dept_code)
             for deptCode, courseList in COURSES_BY_DEPT.items():
                 for code, title, credits in courseList:
@@ -199,7 +199,7 @@ def main():
                     )
                     courses.append((cur.fetchone()[0], deptCode))
 
-            # 4) 학생
+            # 4) 학생 생성
             usedNames: set[str] = set()
             students: list[tuple[int, str]] = []  # (student_id, dept_code)
             studentCounter = 1
@@ -219,20 +219,20 @@ def main():
                 )
                 students.append((cur.fetchone()[0], deptCode))
 
-            # 5) 수강 + 성적
+            # 5) 수강 기록과 성적 생성
             for studentId, deptCode in students:
                 gradePool = pickGradePool()
                 myCourses = [c for c in courses if c[1] == deptCode]
                 otherCourses = [c for c in courses if c[1] != deptCode]
                 pool = myCourses + random.sample(otherCourses, k=min(3, len(otherCourses)))
 
-                # 학생당 1~3 학기 수강
+                # 학생마다 1~3개 학기의 수강 기록을 만든다.
                 takenSemesters = random.sample(SEMESTERS, k=random.randint(1, 3))
                 for year, sem in takenSemesters:
                     perSem = min(random.randint(3, 5), len(pool))
                     selected = random.sample(pool, k=perSem)
                     for courseId, courseDept in selected:
-                        # 마지막 학기는 30% 확률로 진행 중 (grade NULL)
+                        # 마지막 학기는 30% 확률로 아직 진행 중인 수강으로 둔다(grade NULL).
                         isLast = (year, sem) == SEMESTERS[-1]
                         inProgress = isLast and random.random() < 0.3
 
@@ -253,7 +253,7 @@ def main():
                             (studentId, courseId, instId, year, sem, grade, gp),
                         )
 
-            # 요약
+            # 생성 결과 요약
             cur.execute("SELECT COUNT(*) FROM departments");      dCnt = cur.fetchone()[0]
             cur.execute("SELECT COUNT(*) FROM instructors");      iCnt = cur.fetchone()[0]
             cur.execute("SELECT COUNT(*) FROM courses");          cCnt = cur.fetchone()[0]

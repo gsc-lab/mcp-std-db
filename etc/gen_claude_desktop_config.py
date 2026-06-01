@@ -1,11 +1,11 @@
 """
-claude_desktop_config.json 에 머지할 mcpServers 스니펫을 생성.
+claude_desktop_config.json 에 붙여 넣을 mcpServers 설정 조각을 만든다.
 
 실행:
   python etc/gen_claude_desktop_config.py
 
 결과:
-  etc/claude_desktop.json 에 아래 형식으로 작성됨:
+  etc/claude_desktop.json 파일에 아래 형식으로 저장된다:
     {
       "mcpServers": {
         "student-mcp": { command, args, cwd ... 현재 PC 경로로 채워짐 }
@@ -13,11 +13,10 @@ claude_desktop_config.json 에 머지할 mcpServers 스니펫을 생성.
     }
 
 설계 의도:
-  - 시스템 위치(%APPDATA%\\Claude\\...)를 직접 쓰지 않음 — 사용자가 기존 파일 상태를
-    스스로 확인하고 수동으로 머지하도록 유도. 학습 단계에선 "내 손으로 붙여넣어 본다"가
-    실수보다 큰 가치.
-  - 생성된 스니펫은 그 자체로 valid JSON — 새 PC면 통째로 사용해도 되고, 기존 config가
-    있으면 'mcpServers' 키 내용만 머지.
+  - 시스템 위치(%APPDATA%\\Claude\\...)를 직접 수정하지 않는다.
+    사용자가 기존 설정을 확인하고 직접 병합해 보도록 하기 위해서다.
+  - 생성된 설정 조각은 그 자체로 올바른 JSON 이다. 새 PC 에서는 통째로 사용할 수 있고,
+    기존 config 가 있으면 'mcpServers' 키 내용만 병합하면 된다.
 """
 import json
 import os
@@ -33,7 +32,7 @@ OUTPUT = Path(__file__).resolve().parent / "claude_desktop.json"
 
 
 def projectRoot() -> Path:
-    # 이 파일은 <repo>/etc/ 안에 있다고 가정.
+    # 이 파일이 <repo>/etc/ 안에 있다고 가정하고 프로젝트 루트를 계산한다.
     return Path(__file__).resolve().parent.parent
 
 
@@ -44,7 +43,7 @@ def venvPython(root: Path) -> Path:
 
 
 def claudeConfigHint() -> Path:
-    """OS 별 Claude Desktop config 경로 — 안내용으로만 사용."""
+    """OS 별 Claude Desktop config 경로를 안내용으로 반환한다."""
     system = platform.system()
     if system == "Windows":
         return Path(os.environ["APPDATA"]) / "Claude" / "claude_desktop_config.json"
@@ -58,7 +57,7 @@ def main() -> int:
     py = venvPython(root)
     main_py = root / "server" / "main.py"
 
-    # 막지는 않음 — 경로만 알려주고 진행. (스니펫 생성 자체는 무해)
+    # 파일이 없어도 생성을 막지는 않는다. 설정 조각을 만드는 것 자체는 안전하다.
     if not py.exists():
         print(f"[!] venv 파이썬 없음: {py}", file=sys.stderr)
         print(f"    먼저 만들어야 Claude Desktop이 서버를 spawn 가능: python -m venv .venv", file=sys.stderr)
@@ -71,9 +70,9 @@ def main() -> int:
                 "command": str(py),
                 "args": [str(main_py)],
                 "cwd": str(root),
-                # Windows cp949 환경에서 Claude Desktop이 spawn한 Python이
-                # 소스 파일(.py)을 cp949 로 잘못 디코딩하는 케이스 방지.
-                # PEP 540 (UTF-8 mode) 강제: 소스/표준입출력/파일 I/O 모두 UTF-8.
+                # Windows cp949 환경에서 Claude Desktop 이 실행한 Python 이
+                # .py 파일을 잘못 디코딩하지 않도록 UTF-8 mode 를 강제한다.
+                # 소스, 표준입출력, 파일 I/O 를 모두 UTF-8 기준으로 맞춘다.
                 "env": {"PYTHONUTF8": "1"},
             }
         }

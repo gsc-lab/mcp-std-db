@@ -1,22 +1,22 @@
 """
-Web v1 — 요청별 MCP 세션 (FastAPI 기반)
+Web v1 — 요청마다 새 MCP 세션을 여는 FastAPI 예제
 
-학습용 단순화 버전. 매 /api/ask 요청마다 MCP 서버를 새로 spawn 한다.
-실서비스에선 비효율적이지만 흐름이 가려지지 않아 학습 단계에 적합.
+학습용으로 단순화한 버전이다. /api/ask 요청이 들어올 때마다 MCP 서버를 새로 실행한다.
+실서비스에서는 비효율적이지만, 연결부터 도구 호출까지의 흐름이 잘 보여 학습에 적합하다.
 
 라우트:
   GET  /                : index.html
   GET  /api/health      : 헬스체크
   GET  /api/resources   : 정적 Resources + Resource Templates 목록
   GET  /api/prompts     : Prompts 목록 + 인자 명세
-  POST /api/ask         : 두 가지 입력 (상호 배타) → {answer, rounds, events}
+  POST /api/ask         : 두 가지 입력 중 하나를 처리 → {answer, rounds, events}
                           - {question, attach: [uri, ...]}    질문 + 첨부 자료
                           - {prompt: {name, args}}            서버 prompt 호출
 
 학습 포인트:
-  - FastAPI 의 async def 라우트 — Flask 와 달리 await 직접 사용 가능
-  - MCP 클라이언트가 비동기라 라우트 안에서 그대로 async with 사용
-  - 매 요청마다 MCP 서버를 spawn → v2_shared_session 에서 공유 세션으로 발전
+  - FastAPI 의 async def 라우트에서는 await 를 직접 사용할 수 있다.
+  - MCP 클라이언트가 비동기라 라우트 안에서 async with 로 그대로 연결한다.
+  - 매 요청마다 MCP 서버를 실행한다. 이후 단계에서는 공유 세션 구조로 발전시킬 수 있다.
 
 실행:
   python web/v1_per_request/app.py
@@ -35,7 +35,7 @@ from fastapi.staticfiles import StaticFiles
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-# Windows 콘솔의 한글 출력 보장.
+# Windows 콘솔에서 한글이 깨지지 않도록 UTF-8 출력으로 맞춘다.
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
@@ -49,14 +49,14 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 
 def venv_python() -> Path:
-    """프로젝트 venv 의 파이썬 경로. MCP 서버는 이 인터프리터로 실행된다."""
+    """MCP 서버 실행에 사용할 프로젝트 가상환경의 Python 경로."""
     if platform.system() == "Windows":
         return REPO_ROOT / ".venv" / "Scripts" / "python.exe"
     return REPO_ROOT / ".venv" / "bin" / "python"
 
 
 def server_params() -> StdioServerParameters:
-    """MCP 서버 실행 파라미터. 매 요청마다 동일한 값으로 spawn."""
+    """MCP 서버 실행 파라미터. 매 요청에서 같은 설정으로 서버를 새로 실행한다."""
     return StdioServerParameters(
         command=str(venv_python()),
         args=[str(SERVER_PATH)],
@@ -66,11 +66,11 @@ def server_params() -> StdioServerParameters:
 
 
 # ────────────────────────────────────────────────────────────────────
-# MCP / Anthropic 형식 변환 헬퍼
+# MCP 형식과 Anthropic 형식을 서로 맞춰 주는 헬퍼
 # ────────────────────────────────────────────────────────────────────
 
 def mcp_tool_to_anthropic(tool) -> dict:
-    """MCP Tool 정의 → Anthropic API 의 tool 형식 (필드 이름만 변환)."""
+    """MCP Tool 정의를 Anthropic API 의 tool 형식으로 바꾼다."""
     return {
         "name": tool.name,
         "description": tool.description or "",
@@ -79,7 +79,7 @@ def mcp_tool_to_anthropic(tool) -> dict:
 
 
 def extract_text_from_mcp_result(content_blocks) -> str:
-    """MCP tools/call 응답에서 텍스트만 추출."""
+    """MCP tools/call 응답에서 텍스트 블록을 모아 하나의 문자열로 만든다."""
     parts = []
     for b in content_blocks:
         if getattr(b, "type", None) == "text":
@@ -90,7 +90,7 @@ def extract_text_from_mcp_result(content_blocks) -> str:
 
 
 def extract_text_from_resource_contents(contents) -> str:
-    """MCP resources/read 응답에서 텍스트만 추출."""
+    """MCP resources/read 응답에서 텍스트 본문을 모아 하나의 문자열로 만든다."""
     parts = []
     for c in contents:
         if hasattr(c, "text"):
@@ -101,7 +101,11 @@ def extract_text_from_resource_contents(contents) -> str:
 
 
 def prompt_message_to_anthropic(msg) -> dict:
-    """MCP PromptMessage → Anthropic message. EmbeddedResource 는 <resource> 마커로."""
+    """MCP PromptMessage 를 Anthropic message 로 변환한다.
+
+    EmbeddedResource 는 Anthropic 이 모르는 타입이므로 <resource> 마커가 붙은
+    텍스트 블록으로 바꾼다.
+    """
     c = msg.content
     if c.type == "text":
         return {"role": msg.role, "content": [{"type": "text", "text": c.text}]}
@@ -112,25 +116,25 @@ def prompt_message_to_anthropic(msg) -> dict:
             if hasattr(r, "text") else repr(r)
         )
         return {"role": msg.role, "content": [{"type": "text", "text": text}]}
-    # 그 외 타입은 학습용 단순 처리
+    # 그 외 타입은 학습용으로 단순하게 문자열 표현만 보낸다.
     return {"role": msg.role, "content": [{"type": "text", "text": repr(c)}]}
 
 
 # ────────────────────────────────────────────────────────────────────
-# 서버 디스커버리 — Resources / Prompts 목록 조회
+# 서버가 제공하는 Resources / Prompts 목록 조회
 # ────────────────────────────────────────────────────────────────────
 
 async def discover_resources() -> dict:
-    """모달 채우기용 — 정적 Resources + Resource Templates 목록.
+    """화면의 Resource 모달을 채우기 위한 목록을 조회한다.
 
-    LLM 의 tools_for_claude 에는 들어가지 않는다 (Resource 선택권은 사용자에게).
+    Resource 는 사용자가 고르는 자료이므로 LLM 에게 tools 로 전달하지 않는다.
     """
     async with stdio_client(server_params()) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
             res = await session.list_resources()
             tpl = await session.list_resource_templates()
-            # NOTE: r.uri / t.uriTemplate 은 pydantic.AnyUrl 객체. str() 로 변환해야 JSON 직렬화 가능.
+            # r.uri / t.uriTemplate 은 AnyUrl 객체라 JSON 으로 보내기 전에 문자열로 바꾼다.
             return {
                 "static": [
                     {"uri": str(r.uri), "name": r.name,
@@ -146,7 +150,7 @@ async def discover_resources() -> dict:
 
 
 async def discover_prompts() -> dict:
-    """모달 채우기용 — Prompts 목록 + 인자 명세."""
+    """화면의 Prompt 모달을 채우기 위한 Prompt 목록과 인자 명세를 조회한다."""
     async with stdio_client(server_params()) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
@@ -171,11 +175,11 @@ async def discover_prompts() -> dict:
 
 
 # ────────────────────────────────────────────────────────────────────
-# 에이전트 실행 — 두 가지 진입점이 공통 multi-turn 루프 사용
+# 에이전트 실행 — 두 진입점이 같은 multi-turn 루프를 사용한다.
 # ────────────────────────────────────────────────────────────────────
 
 async def run_chat(question: str, attach_uris: list[str]) -> dict:
-    """질문 + 자료 첨부 흐름."""
+    """자연어 질문과 사용자가 첨부한 Resource 를 함께 처리한다."""
     events: list[dict] = []
 
     def log(direction: str, text: str) -> None:
@@ -191,7 +195,7 @@ async def run_chat(question: str, attach_uris: list[str]) -> dict:
             tools_for_claude = [mcp_tool_to_anthropic(t) for t in tools_result.tools]
             log("**", f"도구 목록: {[t.name for t in tools_result.tools]}")
 
-            # 사용자 첨부 자료를 루프 진입 전에 사전 조회 → 첫 user 메시지에 포함.
+            # 사용자가 첨부한 자료를 먼저 읽고, 첫 user 메시지에 참고 자료로 포함한다.
             attached_blocks: list[dict] = []
             for uri in attach_uris:
                 log(">>", f"MCP resources/read (사용자 첨부): {uri}")
@@ -215,7 +219,7 @@ async def run_chat(question: str, attach_uris: list[str]) -> dict:
 
 
 async def run_chat_with_prompt(prompt_name: str, prompt_args: dict) -> dict:
-    """서버 prompt 호출 흐름. prompts/get 결과를 첫 대화 상태로 사용."""
+    """서버 Prompt 를 실행하고, prompts/get 결과를 첫 대화 상태로 사용한다."""
     events: list[dict] = []
 
     def log(direction: str, text: str) -> None:
@@ -256,7 +260,7 @@ async def run_chat_with_prompt(prompt_name: str, prompt_args: dict) -> dict:
 
 
 async def _run_multi_turn(session, anthropic, tools_for_claude, messages, log, events) -> dict:
-    """다중 호출 루프. 종료 조건은 LLM 의 stop_reason."""
+    """도구를 여러 번 호출할 수 있는 공통 루프. 종료 조건은 LLM 의 stop_reason 이다."""
     for turn in range(1, MAX_TURNS + 1):
         response = await anthropic.messages.create(
             model=MODEL,
@@ -277,7 +281,7 @@ async def _run_multi_turn(session, anthropic, tools_for_claude, messages, log, e
         for tu in tool_uses:
             log(">>", f"  MCP tools/call: {tu.name}({tu.input})")
             tc = await session.call_tool(tu.name, tu.input)
-            # NOTE: 실제 구현에선 tc.isError 검사 필요.
+            # NOTE: 실제 구현에서는 tc.isError 도 확인해야 한다.
             result_text = extract_text_from_mcp_result(tc.content)
             log("<<", f"  MCP 결과 ({len(result_text)} 자)")
             tool_results.append({
@@ -297,7 +301,7 @@ async def _run_multi_turn(session, anthropic, tools_for_claude, messages, log, e
 
 
 # ────────────────────────────────────────────────────────────────────
-# FastAPI 앱 — 라우트는 async def, 비동기 함수를 그대로 await
+# FastAPI 앱 — 라우트는 async def 로 두고 비동기 함수를 그대로 await 한다.
 # ────────────────────────────────────────────────────────────────────
 app = FastAPI(title="student-mcp · web v1 (요청별 MCP 세션)")
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")

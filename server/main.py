@@ -1,14 +1,15 @@
 """
-Stage 2 — student-mcp 서버 (옵션 B: Tools + Resources 하이브리드).
+Stage 2 — student-mcp 서버 (Tools + Resources 하이브리드).
 
 설계 의도:
-  - DB 접근은 직접 SQL 유지 (학습 surface — ORM 도입 안 함, CLAUDE.md 결정)
-  - Tools: 동적 검색/집계 — LLM이 대화 흐름 보고 호출 시점/인자 판단
-  - Resources: ID 단일 조회 / 정적 마스터 — URI로 식별되는 자료
+  - DB 접근은 직접 SQL 로 유지한다. ORM 없이 SQL 흐름을 눈으로 보기 위함이다.
+  - Tools: 동적 검색/집계. LLM 이 대화 흐름을 보고 호출 시점과 인자를 판단한다.
+  - Resources: ID 단일 조회 / 정적 마스터. URI 로 식별되는 읽기 전용 자료다.
 
 핵심 보안 패턴:
-  반드시 mcp_reader 롤(SELECT only)로 DB 접속. POSTGRES_USER 절대 사용 X.
-  → buildDsn() 의 user 라인이 보안의 절반. 02_roles.sh 의 GRANT 정책이 나머지 절반.
+  MCP 서버는 반드시 mcp_reader 롤(SELECT only)로 DB 에 접속한다.
+  POSTGRES_USER 로 접속하지 않는다.
+  → buildDsn() 의 user 설정과 02_roles.sh 의 GRANT 정책이 함께 읽기 전용 접근을 보장한다.
 
 실행:
   mcp dev server/main.py        # 브라우저 inspector
@@ -54,7 +55,7 @@ def queryRows(sql: str, params: tuple = ()) -> list[dict[str, Any]]:
 
 
 def jsonDump(value: Any) -> str:
-    """dataclass(es) → JSON 문자열 (한글 그대로 유지). Resource 반환 직렬화용."""
+    """dataclass 또는 일반 값을 JSON 문자열로 바꾼다. 한글은 그대로 유지한다."""
     if isinstance(value, list):
         out = [asdict(v) if hasattr(v, "__dataclass_fields__") else v for v in value]
     elif hasattr(value, "__dataclass_fields__"):
@@ -65,7 +66,7 @@ def jsonDump(value: Any) -> str:
 
 
 # ════════════════════════════════════════════════════════════
-# 결과 모델 (dataclass) — SQL 쿼리 결과의 모양을 한 곳에 명시
+# 결과 모델(dataclass) — SQL 쿼리 결과의 모양을 한 곳에 명시한다.
 # ════════════════════════════════════════════════════════════
 
 @dataclass
@@ -81,7 +82,7 @@ class DepartmentStat:
     name: str
     college: str
     student_count: int
-    avg_gpa: float | None  # 학생/성적 0건 학과면 None
+    avg_gpa: float | None  # 학생이나 성적이 없으면 None
 
 
 @dataclass
@@ -101,7 +102,7 @@ class EnrollmentRow:
     credits: float
     year: int
     semester: str
-    grade: str | None         # 진행 중이면 None
+    grade: str | None         # 아직 진행 중인 수강이면 None
     grade_point: float | None
     instructor: str | None
 
@@ -140,7 +141,7 @@ class TopStudentRow:
 
 
 # ════════════════════════════════════════════════════════════
-# Tools — 동적 검색/집계 (LLM이 호출 시점/인자 결정)
+# Tools — 동적 검색/집계. LLM 이 호출 시점과 인자를 결정한다.
 # ════════════════════════════════════════════════════════════
 
 @mcp.tool()
@@ -240,7 +241,7 @@ def department_stats() -> list[DepartmentStat]:
 
 
 # ════════════════════════════════════════════════════════════
-# Resources — URI로 식별되는 자료
+# Resources — URI 로 식별되는 읽기 전용 자료
 #   departments://all          정적 마스터
 #   courses://{dept}           학과별 강의
 #   students://{student_no}    학생 1명 상세
@@ -324,19 +325,19 @@ def res_student_detail(student_no: str) -> str:
 
 
 # ════════════════════════════════════════════════════════════
-# Prompts — 사용자가 트리거하는 재사용 가능한 작업 흐름
+# Prompts — 사용자가 실행하는 재사용 가능한 작업 흐름
 #
 # 두 가지 패턴:
 #   (A) 서버 사전 조회 + EmbeddedResource 포함
-#       템플릿 Resource(students://{...} 등) 처럼 클라이언트 UI 에 안 뜨는
-#       자료를, prompt 안에서 서버가 직접 읽어 메시지에 포함시킨다.
-#       LLM 은 별도 호출 없이 데이터를 받아 답변 시작.
+#       템플릿 Resource(students://{...} 등)처럼 목록에 직접 드러나지 않는 자료를
+#       prompt 안에서 서버가 읽어 메시지에 포함시킨다.
+#       LLM 은 별도 도구 호출 없이 데이터를 받아 답변을 시작한다.
 #   (B) Tool 호출 안내 텍스트
-#       prompt 가 지시문만 반환. LLM 이 적절한 Tool 을 직접 호출.
+#       prompt 는 지시문만 반환한다. LLM 이 필요한 Tool 을 직접 호출한다.
 # ════════════════════════════════════════════════════════════
 
 def embedResource(uri: str, jsonText: str) -> EmbeddedResource:
-    """JSON 문자열을 EmbeddedResource(application/json) 로 감싼다."""
+    """JSON 문자열을 MCP EmbeddedResource(application/json) 형태로 감싼다."""
     return EmbeddedResource(
         type="resource",
         resource=TextResourceContents(
@@ -349,7 +350,9 @@ def embedResource(uri: str, jsonText: str) -> EmbeddedResource:
 
 @mcp.prompt()
 def analyze_student_risk(student_no: str) -> list[UserMessage]:
-    """학번을 받아 학사 경고 가능성을 분석. 학생 상세 자료를 서버가 미리 조회해 메시지에 포함.
+    """학번을 받아 학사 경고 가능성을 분석한다.
+
+    학생 상세 자료는 서버가 미리 조회해 메시지에 포함한다.
 
     Args:
         student_no: 학번 (예: 20240001)
@@ -369,7 +372,7 @@ def analyze_student_risk(student_no: str) -> list[UserMessage]:
 
 @mcp.prompt()
 def course_catalog(department_code: str) -> list[UserMessage]:
-    """학과 강의 목록을 서버가 조회해 포함시키고 정리를 요청.
+    """학과 강의 목록을 서버가 조회해 포함시키고 정리를 요청한다.
 
     Args:
         department_code: 학과 코드 (GSC | NUR | SWF | ME | SPR)
@@ -388,7 +391,7 @@ def course_catalog(department_code: str) -> list[UserMessage]:
 
 @mcp.prompt()
 def compare_departments() -> str:
-    """학과별 학생 수/평균 GPA 비교 분석 (LLM 이 Tool 을 직접 호출하는 패턴)."""
+    """학과별 학생 수와 평균 GPA 비교 분석을 요청한다. LLM 이 Tool 을 직접 호출한다."""
     return (
         "department_stats 도구를 호출해 학과별 학생 수와 평균 GPA를 가져온 뒤, "
         "아래 관점으로 비교 분석해줘:\n"

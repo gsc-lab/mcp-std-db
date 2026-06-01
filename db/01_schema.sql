@@ -1,11 +1,11 @@
 -- ============================================================
--- 학사 정보 스키마 (student_db)
+-- 학사 정보 예제 스키마 (student_db)
 -- ============================================================
 
 CREATE SCHEMA student_db;
 SET search_path TO student_db, public;
 
--- 한글 이름 LIKE 검색을 빠르게 (선택)
+-- 한글 이름 부분 검색을 빠르게 하기 위한 확장.
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
 -- ── ENUM 타입 ───────────────────────────────────────────────
@@ -73,17 +73,17 @@ CREATE TABLE enrollments (
   instructor_id BIGINT                 REFERENCES instructors(id),
   year          SMALLINT      NOT NULL CHECK (year BETWEEN 2000 AND 2100),
   semester      semester_type NOT NULL,
-  grade         letter_grade,                          -- 진행 중이면 NULL
-  grade_point   NUMERIC(2,1),                          -- 4.5 만점 환산
+  grade         letter_grade,                          -- 아직 진행 중인 수강이면 NULL
+  grade_point   NUMERIC(2,1),                          -- 4.5 만점 기준으로 환산한 점수
   enrolled_at   TIMESTAMPTZ   NOT NULL DEFAULT now(),
-  UNIQUE (student_id, course_id, year, semester)       -- 동일 학기 중복수강 차단
+  UNIQUE (student_id, course_id, year, semester)       -- 같은 학생의 동일 학기 중복 수강 방지
 );
 CREATE INDEX idx_enrollments_student    ON enrollments(student_id);
 CREATE INDEX idx_enrollments_course     ON enrollments(course_id);
 CREATE INDEX idx_enrollments_instructor ON enrollments(instructor_id);
 CREATE INDEX idx_enrollments_term       ON enrollments(year, semester);
 
--- ── 뷰: 학생별 GPA ──────────────────────────────────────────
+-- ── 뷰: 학생별 GPA 요약 ─────────────────────────────────────
 CREATE VIEW student_gpa AS
 SELECT
   s.id          AS student_id,
